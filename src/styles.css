@@ -65,6 +65,7 @@ button{font:inherit}
 .footer{left:0;right:0;bottom:27px;text-align:center;color:#24455f;font-size:17px;font-weight:800;letter-spacing:.02em}
 
 @media(max-width:700px){
+  .shell{width:100vw;height:100dvh;max-height:none;aspect-ratio:auto}
   .brand{left:16px;top:17px;font-size:33px}.brand span{font-size:12px}
   .title-block{left:105px;right:185px;top:17px}.title{font-size:58px}.subtitle{font-size:13px;margin-top:6px}
   .status-panel{right:12px;top:12px;width:160px;gap:6px}.pill{width:160px;min-height:57px;border-radius:20px;padding:7px 11px}.pill>span:first-child{font-size:12px}.pill strong{font-size:16px}.stake-arrow{right:11px;top:19px}.stake-menu{top:61px;right:6px;width:150px}.stake-option{height:42px;font-size:15px}.minor-status-row{gap:5px}.minor-pill{min-height:34px;font-size:11px}.minor-pill strong{font-size:11px}.toggle{width:30px;height:18px}.toggle::after{width:12px;height:12px}.toggle-pill input:checked+.toggle::after{transform:translateX(12px)}
