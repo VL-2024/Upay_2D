@@ -44,8 +44,8 @@ button{font:inherit}
 .side-tools{top:190px;left:20px;display:flex;flex-direction:column;gap:16px}
 .tool{width:56px;height:56px;border-radius:50%;border:2px solid rgba(234,194,105,.95);background:rgba(5,25,60,.90);color:#f5d68d;font-size:25px;font-weight:800;box-shadow:0 7px 16px rgba(0,0,0,.2)}
 
-.objective{left:50%;top:1012px;transform:translateX(-50%);min-width:320px;text-align:center;background:linear-gradient(180deg,rgba(36,81,116,.98),rgba(19,57,84,.98));border:1px solid rgba(255,255,255,.25);border-radius:21px;padding:13px 30px;font-size:23px;font-weight:850;box-shadow:0 8px 18px rgba(0,0,0,.17)}
-.upay-zones{left:82px;right:82px;top:1080px;display:grid;grid-template-columns:1fr 65px 1fr;align-items:center;gap:16px}
+.objective{left:50%;top:1066px;transform:translateX(-50%);min-width:320px;text-align:center;background:linear-gradient(180deg,rgba(36,81,116,.98),rgba(19,57,84,.98));border:1px solid rgba(255,255,255,.25);border-radius:21px;padding:13px 30px;font-size:23px;font-weight:850;box-shadow:0 8px 18px rgba(0,0,0,.17)}
+.upay-zones{left:82px;right:82px;top:1146px;display:grid;grid-template-columns:1fr 65px 1fr;align-items:center;gap:16px}
 .zone{min-width:0}
 .center-ornament{display:flex;align-items:center;justify-content:center;color:#1d557d;font-size:50px;text-shadow:0 2px 2px rgba(255,255,255,.5)}
 .zone-title{text-align:center;margin-bottom:9px;color:#f3dfac;font-size:22px;font-weight:900;text-shadow:0 2px 5px rgba(0,0,0,.42)}
@@ -56,13 +56,13 @@ button{font:inherit}
 .slot.filled{border-color:rgba(234,194,105,.86);box-shadow:inset 0 0 16px rgba(234,194,105,.16)}
 .slot img{width:95%;height:95%;object-fit:contain;filter:drop-shadow(0 4px 3px rgba(0,0,0,.22))}
 
-.controls{left:25px;right:25px;bottom:102px}
+.controls{left:25px;right:25px;bottom:74px}
 .action-row{display:grid;grid-template-columns:150px 1fr 150px;gap:15px;align-items:center;padding:18px 22px;background:linear-gradient(180deg,rgba(16,52,82,.97),rgba(5,25,43,.97));border:1px solid rgba(255,255,255,.13);border-radius:42px;box-shadow:0 18px 34px rgba(0,0,0,.23)}
 .icon-btn{height:110px;border:0;background:transparent;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer}
 .icon-btn b{font-size:45px;line-height:1;color:#fff}.icon-btn span{font-size:17px;font-weight:800}
 .main-btn{height:105px;border:1px solid rgba(255,255,255,.48);border-radius:34px;background:linear-gradient(180deg,var(--gold2),var(--gold));color:#143751;font-size:42px;font-weight:950;line-height:.95;cursor:pointer;box-shadow:inset 0 2px 0 rgba(255,255,255,.54),0 10px 19px rgba(0,0,0,.18)}
 .main-btn small{display:block;margin-top:8px;font-size:20px;line-height:1;font-weight:850}
-.footer{left:0;right:0;bottom:27px;text-align:center;color:#24455f;font-size:17px;font-weight:800;letter-spacing:.02em}
+.footer{left:0;right:0;bottom:18px;text-align:center;color:#24455f;font-size:17px;font-weight:800;letter-spacing:.02em}
 
 @media(max-width:700px){
   .shell{width:100vw;height:100dvh;max-height:none;aspect-ratio:auto}
@@ -70,7 +70,7 @@ button{font:inherit}
   .title-block{left:105px;right:185px;top:17px}.title{font-size:58px}.subtitle{font-size:13px;margin-top:6px}
   .status-panel{right:12px;top:12px;width:160px;gap:6px}.pill{width:160px;min-height:57px;border-radius:20px;padding:7px 11px}.pill>span:first-child{font-size:12px}.pill strong{font-size:16px}.stake-arrow{right:11px;top:19px}.stake-menu{top:61px;right:6px;width:150px}.stake-option{height:42px;font-size:15px}.minor-status-row{gap:5px}.minor-pill{min-height:34px;font-size:11px}.minor-pill strong{font-size:11px}.toggle{width:30px;height:18px}.toggle::after{width:12px;height:12px}.toggle-pill input:checked+.toggle::after{transform:translateX(12px)}
   .side-tools{top:132px;left:10px;gap:10px}.tool{width:40px;height:40px;font-size:18px}
-  .objective{top:61%;min-width:230px;padding:8px 18px;font-size:16px}
-  .upay-zones{left:18px;right:18px;top:66.5%;grid-template-columns:1fr 34px 1fr;gap:6px}.zone-title{font-size:15px}.zone-progress{font-size:10px}.center-ornament{font-size:30px}.zone-slots{height:79px;padding:10px 8px;gap:5px;border-radius:14px}.slot{height:57px;border-width:2px;border-radius:10px}
-  .controls{left:10px;right:10px;bottom:61px}.action-row{grid-template-columns:78px 1fr 78px;gap:4px;padding:10px 9px;border-radius:26px}.icon-btn{height:76px}.icon-btn b{font-size:28px}.icon-btn span{font-size:11px}.main-btn{height:74px;border-radius:24px;font-size:27px}.main-btn small{margin-top:5px;font-size:14px}.footer{bottom:18px;font-size:10px}
+  .objective{top:65.5%;min-width:230px;padding:8px 18px;font-size:16px}
+  .upay-zones{left:18px;right:18px;top:71.2%;grid-template-columns:1fr 34px 1fr;gap:6px}.zone-title{font-size:15px}.zone-progress{font-size:10px}.center-ornament{font-size:30px}.zone-slots{height:79px;padding:10px 8px;gap:5px;border-radius:14px}.slot{height:57px;border-width:2px;border-radius:10px}
+  .controls{left:10px;right:10px;bottom:42px}.action-row{grid-template-columns:78px 1fr 78px;gap:4px;padding:10px 9px;border-radius:26px}.icon-btn{height:76px}.icon-btn b{font-size:28px}.icon-btn span{font-size:11px}.main-btn{height:74px;border-radius:24px;font-size:27px}.main-btn small{margin-top:5px;font-size:14px}.footer{bottom:10px;font-size:10px}
 }
