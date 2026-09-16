@@ -1,0 +1,23 @@
+.bg-layer{
+  background-image:url('../assets/ref/upay_background_clean.png?v=013d') !important;
+  background-repeat:no-repeat !important;
+  background-size:108% auto !important;
+  background-position:center -70px !important;
+}
+
+/* tighter lower composition */
+.objective{top:1066px !important;}
+.upay-zones{top:1146px !important;}
+.controls{bottom:74px !important;}
+.footer{bottom:18px !important;}
+
+@media(max-width:700px){
+  .bg-layer{
+    background-size:112% auto !important;
+    background-position:center -42px !important;
+  }
+  .objective{top:65.5% !important;}
+  .upay-zones{top:71.2% !important;}
+  .controls{bottom:42px !important;}
+  .footer{bottom:10px !important;}
+}
