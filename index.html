@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="format-detection" content="telephone=no" />
-  <title>UPAY 2D v0.1.3b-alpha</title>
+  <title>UPAY 2D v0.1.3c-alpha</title>
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
 <body>
@@ -74,6 +74,15 @@
     <footer class="footer">БОЛЬШЕ, ЧЕМ ЛОТЕРЕЯ <b>X2</b> НАШИ ИГРЫ. НАША КУЛЬТУРА.</footer>
   </div>
 
+  <script>
+    fetch('./assets/ref/upay_background_high_carpet_720.webp.b64')
+      .then(r => r.text())
+      .then(b64 => {
+        const bg = document.querySelector('.bg-layer');
+        if (bg && b64) bg.style.backgroundImage = `url("data:image/webp;base64,${b64.trim()}")`;
+      })
+      .catch(() => {});
+  </script>
   <script type="module" src="./src/dom-main.js"></script>
 </body>
 </html>
