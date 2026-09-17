@@ -1,2 +1,2 @@
-UPAY 2D 0.1.25-alpha
+UPAY 2D 0.1.26-alpha
 2026-09-17
