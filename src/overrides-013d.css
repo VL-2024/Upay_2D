@@ -1,13 +1,20 @@
 .bg-layer{
-  background-image:url('../assets/ref/upay_background_clean.png?v=013e') !important;
+  background-image:url('../assets/ref/upay_background_high_carpet.webp?v=0126') !important;
   background-repeat:no-repeat !important;
   background-size:108% auto !important;
   background-position:center -70px !important;
 }
 
-/* denser lower composition */
-.objective{top:1090px !important;}
-.upay-zones{top:1180px !important;}
+/* Lower HUD is anchored to the bottom so browser zoom / viewport height
+   cannot make the UPAY fields drift relative to the controls. */
+.objective{
+  top:auto !important;
+  bottom:526px !important;
+}
+.upay-zones{
+  top:auto !important;
+  bottom:331px !important;
+}
 .controls{bottom:74px !important;}
 .footer{bottom:18px !important;}
 
@@ -16,8 +23,14 @@
     background-size:112% auto !important;
     background-position:center -42px !important;
   }
-  .objective{top:67% !important;}
-  .upay-zones{top:73.2% !important;}
+  .objective{
+    top:auto !important;
+    bottom:274px !important;
+  }
+  .upay-zones{
+    top:auto !important;
+    bottom:154px !important;
+  }
   .controls{bottom:42px !important;}
   .footer{bottom:10px !important;}
 }
