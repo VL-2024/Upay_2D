@@ -1,5 +1,5 @@
-// UPAY 2D v0.1.4a-alpha
-// Visual strike hotfix for the DOM renderer: the selected chuko now travels all the way to the target.
+// UPAY 2D v0.1.4b-alpha
+// Slower visual strike: selected chuko clearly travels to the target and returns.
 
 (function(){
   let running = false;
@@ -35,12 +35,9 @@
     const ux = dx / dist;
     const uy = dy / dist;
 
-    // Stop at the edge of the target rather than passing through its center.
     const contactDistance = Math.max(24, dist - Math.max(b.width, b.height) * 0.36);
     const contactLeft = sx + ux * contactDistance;
     const contactTop = sy + uy * contactDistance;
-
-    // Small recoil before the strike makes the flight easy to read.
     const recoilLeft = sx - ux * 13;
     const recoilTop = sy - uy * 13;
 
@@ -64,20 +61,20 @@
     document.body.appendChild(clone);
     source.style.visibility = 'hidden';
 
+    const duration = 900;
     const flight = clone.animate([
       { offset: 0, left: `${sx}px`, top: `${sy}px`, transform: 'rotate(0deg) scale(1)' },
-      { offset: .14, left: `${recoilLeft}px`, top: `${recoilTop - 3}px`, transform: 'rotate(-12deg) scale(1.03)' },
-      { offset: .52, left: `${contactLeft}px`, top: `${contactTop - 18}px`, transform: 'rotate(165deg) scale(1.10)' },
-      { offset: .60, left: `${contactLeft + ux * 8}px`, top: `${contactTop + uy * 8 - 12}px`, transform: 'rotate(205deg) scale(1.06)' },
-      { offset: 1, left: `${sx}px`, top: `${sy}px`, transform: 'rotate(360deg) scale(1)' },
+      { offset: .16, left: `${recoilLeft}px`, top: `${recoilTop - 3}px`, transform: 'rotate(-10deg) scale(1.03)' },
+      { offset: .58, left: `${contactLeft}px`, top: `${contactTop - 18}px`, transform: 'rotate(145deg) scale(1.09)' },
+      { offset: .68, left: `${contactLeft + ux * 8}px`, top: `${contactTop + uy * 8 - 12}px`, transform: 'rotate(190deg) scale(1.06)' },
+      { offset: 1, left: `${sx}px`, top: `${sy}px`, transform: 'rotate(330deg) scale(1)' },
     ], {
-      duration: 560,
-      easing: 'cubic-bezier(.18,.72,.18,1)',
+      duration,
+      easing: 'cubic-bezier(.18,.70,.18,1)',
       fill: 'forwards'
     });
 
-    // Additional visible knock on the target at the moment of contact.
-    window.setTimeout(() => knockTarget(target, ux, uy), 275);
+    window.setTimeout(() => knockTarget(target, ux, uy), 520);
 
     flight.finished.catch(() => {}).finally(() => {
       clone.remove();
@@ -95,7 +92,7 @@
       { offset: .68, transform: `${base} translate(${ux * 28}px, ${uy * 22 - 9}px) rotate(42deg) scale(1.04)` },
       { offset: 1, transform: base },
     ], {
-      duration: 330,
+      duration: 430,
       easing: 'cubic-bezier(.18,.72,.2,1)'
     });
   }
