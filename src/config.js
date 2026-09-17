@@ -1,5 +1,5 @@
 export const CONFIG = {
-  version: '0.1.27-alpha',
+  version: '0.1.28-alpha',
   currency: 'сом',
   denominations: [25, 50, 100],
   defaultDenomination: 50,
