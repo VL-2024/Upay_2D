@@ -10,10 +10,10 @@ export const SCENARIOS = Object.freeze({
 });
 
 const RULES = Object.freeze({
-  [SCENARIOS.ZERO_B]: { normalLimit: 1, khanRequired: false, failAfterLimit: true, result: 'Не выбит. Собрано 1/3 УПАЙ' },
-  [SCENARIOS.ZERO_A]: { normalLimit: 2, khanRequired: false, failAfterLimit: true, result: 'Не выбит. Собрано 2/3 УПАЙ' },
-  [SCENARIOS.ONE]: { normalLimit: 3, khanRequired: false, result: 'Билет завершён: 1 УПАЙ' },
-  [SCENARIOS.ONE_PLUS]: { normalLimit: 5, khanRequired: false, result: 'Билет завершён: 1 УПАЙ + 2/3' },
+  [SCENARIOS.ZERO_B]: { normalLimit: 1, khanRequired: false, failAfterLimit: true, result: 'Промах. Собрано 1/3 УПАЙ' },
+  [SCENARIOS.ZERO_A]: { normalLimit: 2, khanRequired: false, failAfterLimit: true, result: 'Промах. Собрано 2/3 УПАЙ' },
+  [SCENARIOS.ONE]: { normalLimit: 3, khanRequired: false, failAfterLimit: true, result: 'Промах. Билет завершён: 1 УПАЙ' },
+  [SCENARIOS.ONE_PLUS]: { normalLimit: 5, khanRequired: false, failAfterLimit: true, result: 'Промах. Билет завершён: 1 УПАЙ + 2/3' },
   [SCENARIOS.TWO]: { normalLimit: 6, khanRequired: false, result: 'Билет завершён: 2 УПАЙ' },
   [SCENARIOS.KHAN]: { normalLimit: 3, khanRequired: true, result: 'ХАН! Билет завершён' },
   [SCENARIOS.TWO_KHAN]: { normalLimit: 6, khanRequired: true, result: '2 УПАЙ + ХАН!' },
