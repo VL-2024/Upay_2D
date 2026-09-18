@@ -577,9 +577,11 @@ function onPointerUp(e) {
   if (!moved || power < 24) { flashObjective('Оттяни чуко назад сильнее и отпусти'); return; }
   const snap = scenario.snapshot();
   if (snap.failedStrikeRequired) {
-    animateMiss(source, candidate, missDx, missDy, () => {
-      scenario.registerFailedStrike(); state.phase = 'settled'; state.selectedSourceId = null; setObjective(scenario.resultText()); syncSelectorLock(); refreshPieceVisuals(); updateActionButton();
-    });
+    if (!candidate || candidate.type !== 'normal') {
+      flashObjective('Оттяни назад по линии к чуко того же цвета');
+      return;
+    }
+    strikeFailedTarget(source, candidate);
     return;
   }
   if (snap.khanActive) {
@@ -660,7 +662,7 @@ async function strikeTarget(source, target) {
   };
   scenario.registerCollection();
 
-  const hit = await animateChukoStrike2072(source, target);
+  const hit = await animateChukoStrike2072(source, target, { eject: true });
   if (!hit) {
     state.phase = 'idle';
     syncSelectorLock();
@@ -699,7 +701,34 @@ async function strikeTarget(source, target) {
   updateActionButton();
 }
 
-async function animateChukoStrike2072(source, target) {
+
+async function strikeFailedTarget(source, target) {
+  state.phase = 'animating';
+  state.selectedSourceId = null;
+  syncSelectorLock();
+  refreshPieceVisuals();
+  updateActionButton();
+
+  const hit = await animateChukoStrike2072(source, target, { eject: false });
+  if (!hit) {
+    state.phase = 'idle';
+    setObjectiveFromScenario();
+    syncSelectorLock();
+    refreshPieceVisuals();
+    updateActionButton();
+    return;
+  }
+
+  scenario.registerFailedStrike();
+  state.phase = 'settled';
+  setObjective(scenario.resultText());
+  syncSelectorLock();
+  refreshPieceVisuals();
+  updateActionButton();
+}
+
+
+async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   const sourceEl = source?.el;
   const targetEl = target?.el;
   if (!sourceEl || !targetEl) return null;
@@ -721,38 +750,35 @@ async function animateChukoStrike2072(source, target) {
   const ux = dx / dist;
   const uy = dy / dist;
 
-  // v20.72 collision constants: heavy striker vs ordinary chuko, restitution 0.82.
-  const strikerMass = 1.7;
-  const targetMass = 1.0;
-  const restitution = 0.82;
-  const incomingSpeed = 18.5;
-  const normalVelocity = -incomingSpeed;
-  let impulse = -(1 + restitution) * normalVelocity;
-  impulse /= (1 / strikerMass) + (1 / targetMass);
-  const targetSpeed = impulse / targetMass;
-
-  // The transparent WebP canvas is larger than the visible bone. A smaller
-  // geometric radius lets the visible shapes actually touch at impact.
-  const contactGap = Math.max(18, (sr.width + tr.width) * .19);
+  // Visual contact point: large transparent margins in the WebP assets mean
+  // the geometric centres must come closer than the DOM rectangles suggest.
+  const contactGap = Math.max(17, (sr.width + tr.width) * .175);
   const impactX = tx - ux * contactGap;
   const impactY = ty - uy * contactGap;
 
   const sourceStartLeft = sx - hostRect.left;
   const sourceStartTop = sy - hostRect.top;
-  const sourceEndLeft = impactX - hostRect.left;
-  const sourceEndTop = impactY - hostRect.top;
+  const impactLeft = impactX - hostRect.left;
+  const impactTop = impactY - hostRect.top;
 
   const baseRot = source.rotation;
-  const impactRot = normalizeDeg(baseRot + (ux >= 0 ? 24 : -24));
+  const impactRot = normalizeDeg(baseRot + (ux >= 0 ? 22 : -22));
 
-  // Compute a guaranteed one-shot exit beyond the visible carpet, based on
-  // the same "single eject animation" principle used in 20.72.
+  // Small striker rebound after the collision. It never returns to its old
+  // position; it settles just behind the contact point.
+  const rebound = clamp(sr.width * .12, 7, 13);
+  const reboundSide = (Math.random() - .5) * clamp(sr.width * .045, 2, 5);
+  const reboundLeft = impactLeft - ux * rebound + (-uy) * reboundSide;
+  const reboundTop = impactTop - uy * rebound + ux * reboundSide;
+  const reboundRot = normalizeDeg(impactRot - (ux >= 0 ? 8 : -8));
+
   const targetLocalX = tx - hostRect.left;
   const targetLocalY = ty - hostRect.top;
   const carpet = getCarpetGeometry(hostRect);
 
-  // Small tangential variation, as in 20.72, while keeping the hit direction dominant.
-  const tangentAmount = (Math.random() * .24) - .12;
+  // Direction is dominated by the strike vector; only a tiny tangential
+  // component keeps repeated hits from looking mechanical.
+  const tangentAmount = (Math.random() * .16) - .08;
   let dirX = ux + (-uy) * tangentAmount;
   let dirY = uy + ux * tangentAmount;
   const dirLen = Math.hypot(dirX, dirY) || 1;
@@ -766,38 +792,82 @@ async function animateChukoStrike2072(source, target) {
   const C = (px * px) / (carpet.rx * carpet.rx) + (py * py) / (carpet.ry * carpet.ry) - 1;
   const disc = Math.max(0, B * B - 4 * A * C);
   let edgeDistance = (-B + Math.sqrt(disc)) / (2 * A);
-  if (!Number.isFinite(edgeDistance) || edgeDistance < 24) {
-    edgeDistance = Math.min(hostRect.width * .24, 135);
-  }
+  if (!Number.isFinite(edgeDistance) || edgeDistance < 18) edgeDistance = Math.min(hostRect.width * .22, 125);
 
-  // v20.72 ended 45–62 px beyond the rim. Scale that to this mobile field.
-  const exitExtra = clamp(hostRect.width * .050, 20, 32);
-  let endX = targetLocalX + dirX * (edgeDistance + exitExtra);
-  let endY = targetLocalY + dirY * (edgeDistance + exitExtra);
+  let endX, endY, c1x, c1y, c2x, c2y, duration, targetSpin, hopHeight;
 
-  const halfW = tr.width * .52;
-  const halfH = tr.height * .52;
-  endX = clamp(endX, halfW + 9, hostRect.width - halfW - 9);
-  endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
+  if (eject) {
+    // Winning hit: immediately travel through the strike line and finish a
+    // little beyond the visible carpet rim.
+    const exitExtra = clamp(hostRect.width * .050, 20, 32);
+    endX = targetLocalX + dirX * (edgeDistance + exitExtra);
+    endY = targetLocalY + dirY * (edgeDistance + exitExtra);
 
-  // If screen-safety clamping pulled it back inside the carpet, push it just
-  // outside again along the same direction.
-  const exNorm = (endX - carpet.cx) / carpet.rx;
-  const eyNorm = (endY - carpet.cy) / carpet.ry;
-  if (exNorm * exNorm + eyNorm * eyNorm <= 1.02) {
-    const scaleOut = 1.045 / Math.max(.001, Math.sqrt(exNorm * exNorm + eyNorm * eyNorm));
-    endX = carpet.cx + (endX - carpet.cx) * scaleOut;
-    endY = carpet.cy + (endY - carpet.cy) * scaleOut;
+    const halfW = tr.width * .52;
+    const halfH = tr.height * .52;
     endX = clamp(endX, halfW + 9, hostRect.width - halfW - 9);
     endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
+
+    const exNorm = (endX - carpet.cx) / carpet.rx;
+    const eyNorm = (endY - carpet.cy) / carpet.ry;
+    if (exNorm * exNorm + eyNorm * eyNorm <= 1.02) {
+      const scaleOut = 1.045 / Math.max(.001, Math.sqrt(exNorm * exNorm + eyNorm * eyNorm));
+      endX = carpet.cx + (endX - carpet.cx) * scaleOut;
+      endY = carpet.cy + (endY - carpet.cy) * scaleOut;
+      endX = clamp(endX, halfW + 9, hostRect.width - halfW - 9);
+      endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
+    }
+
+    const push = clamp(tr.width * .46, 30, 46);
+    c1x = targetLocalX + dirX * push;
+    c1y = targetLocalY + dirY * push;
+    c2x = endX - dirX * clamp(tr.width * .42, 30, 48);
+    c2y = endY - dirY * clamp(tr.width * .42, 30, 48);
+    duration = 700 + Math.random() * 150;
+    targetSpin = ((Math.random() * 2.25) - 1.125) * Math.PI;
+    hopHeight = clamp(tr.height * .10, 6, 13);
+  } else {
+    // Non-winning contact has two natural-looking outcomes:
+    // 1) a short hop almost in place;
+    // 2) a slide toward the rim that stops safely inside the carpet.
+    const moveTowardEdge = Math.random() < .58;
+    if (moveTowardEdge) {
+      const safeTravel = Math.max(20, edgeDistance - clamp(tr.width * .72, 38, 62));
+      const travel = clamp(safeTravel * (.58 + Math.random() * .20), 28, Math.min(115, safeTravel));
+      endX = targetLocalX + dirX * travel;
+      endY = targetLocalY + dirY * travel;
+
+      // Guarantee the centre remains inside the carpet after the failed hit.
+      const nx = (endX - carpet.cx) / carpet.rx;
+      const ny = (endY - carpet.cy) / carpet.ry;
+      const n = Math.hypot(nx, ny);
+      if (n > .86) {
+        const k = .86 / n;
+        endX = carpet.cx + (endX - carpet.cx) * k;
+        endY = carpet.cy + (endY - carpet.cy) * k;
+      }
+
+      c1x = targetLocalX + dirX * Math.min(32, travel * .34);
+      c1y = targetLocalY + dirY * Math.min(32, travel * .34);
+      c2x = targetLocalX + (endX - targetLocalX) * .76;
+      c2y = targetLocalY + (endY - targetLocalY) * .76;
+      duration = 470 + Math.random() * 100;
+      targetSpin = ((Math.random() * 1.0) - .5) * Math.PI;
+      hopHeight = clamp(tr.height * .13, 8, 16);
+    } else {
+      const travel = clamp(tr.width * (.12 + Math.random() * .10), 8, 18);
+      endX = targetLocalX + dirX * travel;
+      endY = targetLocalY + dirY * travel;
+      c1x = targetLocalX + dirX * travel * .45;
+      c1y = targetLocalY + dirY * travel * .45;
+      c2x = targetLocalX + dirX * travel * .85;
+      c2y = targetLocalY + dirY * travel * .85;
+      duration = 390 + Math.random() * 80;
+      targetSpin = ((Math.random() * .55) - .275) * Math.PI;
+      hopHeight = clamp(tr.height * .18, 10, 20);
+    }
   }
 
-  const pushDistance = clamp(targetSpeed * 2.55, 36, 54);
-  const c1x = targetLocalX + dirX * pushDistance + (-dirY) * tangentAmount * 22;
-  const c1y = targetLocalY + dirY * pushDistance + dirX * tangentAmount * 22;
-  const c2x = endX - dirX * 48 + (-dirY) * tangentAmount * 10;
-  const c2y = endY - dirY * 48 + dirX * tangentAmount * 10;
-  const targetSpin = ((Math.random() * 2.8) - 1.4) * Math.PI;
   const targetStartRot = target.rotation;
 
   sourceEl.classList.remove(
@@ -809,9 +879,9 @@ async function animateChukoStrike2072(source, target) {
   targetEl.style.zIndex = '80';
   targetEl.style.pointerEvents = 'none';
 
-  // Striker reaches the target fast. Impact happens at 84% of this flight.
-  const sourceDuration = 330;
-  const impactAt = 0.72;
+  // The collision is front-loaded: target response starts exactly at impact.
+  const sourceDuration = 355;
+  const impactAt = .64;
   const sourceAnim = sourceEl.animate([
     {
       offset: 0,
@@ -820,32 +890,37 @@ async function animateChukoStrike2072(source, target) {
       transform: `translate(-50%,-50%) rotate(${baseRot}deg) scale(1)`
     },
     {
-      offset: .15,
-      left: `${sourceStartLeft - ux * 7}px`,
-      top: `${sourceStartTop - uy * 7}px`,
-      transform: `translate(-50%,-50%) rotate(${baseRot - (ux >= 0 ? 4 : -4)}deg) scale(1.015)`
+      offset: .13,
+      left: `${sourceStartLeft - ux * 6}px`,
+      top: `${sourceStartTop - uy * 6}px`,
+      transform: `translate(-50%,-50%) rotate(${baseRot - (ux >= 0 ? 3 : -3)}deg) scale(1.012)`
     },
     {
       offset: impactAt,
-      left: `${sourceEndLeft}px`,
-      top: `${sourceEndTop}px`,
+      left: `${impactLeft}px`,
+      top: `${impactTop}px`,
       transform: `translate(-50%,-50%) rotate(${impactRot}deg) scale(1.035)`
     },
     {
+      offset: .82,
+      left: `${reboundLeft}px`,
+      top: `${reboundTop - 3}px`,
+      transform: `translate(-50%,-50%) rotate(${reboundRot}deg) scale(1.018)`
+    },
+    {
       offset: 1,
-      left: `${sourceEndLeft}px`,
-      top: `${sourceEndTop}px`,
-      transform: `translate(-50%,-50%) rotate(${impactRot}deg) scale(1)`
+      left: `${reboundLeft}px`,
+      top: `${reboundTop}px`,
+      transform: `translate(-50%,-50%) rotate(${reboundRot}deg) scale(1)`
     }
   ], {
     duration: sourceDuration,
-    easing: 'cubic-bezier(.18,.74,.16,1)',
+    easing: 'cubic-bezier(.16,.76,.18,1)',
     fill: 'forwards'
   });
 
   const impactDelay = Math.round(sourceDuration * impactAt);
 
-  // Start the target on the exact impact frame — there is no post-hit wait.
   const targetPromise = new Promise(resolve => {
     setTimeout(() => {
       createImpactBurst(
@@ -853,26 +928,24 @@ async function animateChukoStrike2072(source, target) {
         impactY + uy * contactGap * .58
       );
 
-      const startLeft = targetLocalX;
-      const startTop = targetLocalY;
-      const duration = 720 + Math.random() * 180;
-
       const startTime = performance.now();
       function tick(now) {
         const raw = Math.min(1, (now - startTime) / duration);
-        const t = 1 - Math.pow(1 - raw, 3); // easeOutCubic from v20.72
+        // Faster initial acceleration makes the target react instantly.
+        const t = 1 - Math.pow(1 - raw, 2.55);
         const mt = 1 - t;
 
         const x =
-          mt * mt * mt * startLeft +
+          mt * mt * mt * targetLocalX +
           3 * mt * mt * t * c1x +
           3 * mt * t * t * c2x +
           t * t * t * endX;
-        const y =
-          mt * mt * mt * startTop +
+        const pathY =
+          mt * mt * mt * targetLocalY +
           3 * mt * mt * t * c1y +
           3 * mt * t * t * c2y +
           t * t * t * endY;
+        const y = pathY - Math.sin(Math.PI * raw) * hopHeight;
 
         targetEl.style.left = `${x}px`;
         targetEl.style.top = `${y}px`;
@@ -890,6 +963,7 @@ async function animateChukoStrike2072(source, target) {
           targetEl.style.transform =
             `translate(-50%,-50%) rotate(${target.rotation}deg)`;
           targetEl.style.zIndex = '';
+          targetEl.style.pointerEvents = '';
           resolve();
         }
       }
@@ -902,9 +976,9 @@ async function animateChukoStrike2072(source, target) {
     targetPromise
   ]);
 
-  source.x = (sourceEndLeft / hostRect.width) * 100;
-  source.y = (sourceEndTop / hostRect.height) * 100;
-  source.rotation = impactRot;
+  source.x = (reboundLeft / hostRect.width) * 100;
+  source.y = (reboundTop / hostRect.height) * 100;
+  source.rotation = reboundRot;
   source.src = frozenSrc;
   source.pose = frozenPose;
   sourceEl.src = frozenSrc;
@@ -923,7 +997,8 @@ async function animateChukoStrike2072(source, target) {
     impactX,
     impactY,
     targetEndX: endX,
-    targetEndY: endY
+    targetEndY: endY,
+    eject
   };
 }
 
