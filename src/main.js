@@ -71,12 +71,12 @@ const DEFAULT_TUNING = {
   chukoSize: 11.6,
   khanSize: 15.2,
   carpetSize: 82,
-  carpetTop: 46.6,
+  carpetTop: 43.2,
   pileYOffset: -2.4,
   pileHeight: 1.67,
   scatterScale: 0.71,
 };
-const TUNING_STORAGE_KEY = 'upay-main-tuning-0142-matter';
+const TUNING_STORAGE_KEY = 'upay-main-tuning-0147-scenario';
 
 function loadTuning() {
   try {
@@ -383,8 +383,15 @@ function startNewGame() {
   state.guideFilter = null;
   const demoMode = document.getElementById('demoToggle').checked;
   if (state.externalScenarioCode) scenario.setScenario(state.externalScenarioCode);
-  else if (demoMode) { scenario.reset({ advanceDemo: state.demoHasStarted }); state.demoHasStarted = true; }
-  else { state.demoHasStarted = false; scenario.setScenario(SCENARIOS.TWO); }
+  else if (demoMode) {
+    scenario.reset({ advanceDemo: state.demoHasStarted });
+    state.demoHasStarted = true;
+  } else {
+    state.demoHasStarted = false;
+    // Temporary integration default. LMS/RGS can set an exact ticket plan via
+    // UPAY2D.setScenario(...) or UPAY2D.setTicketPlan(...).
+    scenario.setScenario(SCENARIOS.KHAN_X500);
+  }
   resetSlotDom();
   buildPieces();
   renderPieces();
@@ -444,6 +451,77 @@ function buildPieces() {
   });
 }
 
+
+
+function preSolveInitialLayout() {
+  const M = getMatter();
+  if (!M || !state.pieces.length) return;
+
+  const br = host.getBoundingClientRect();
+  if (!br.width || !br.height) return;
+
+  const engine = M.Engine.create({ enableSleeping: false });
+  engine.gravity.x = 0;
+  engine.gravity.y = 0;
+  engine.gravity.scale = 0;
+  engine.positionIterations = 14;
+  engine.velocityIterations = 10;
+
+  const carpet = getMatterCarpetGeometry(br);
+  const walls = createMatterCarpetWalls(M, carpet);
+  M.Composite.add(engine.world, walls);
+
+  const records = [];
+  for (const piece of state.pieces) {
+    const visualW = br.width * ((piece.type === 'khan' ? tuning.khanSize : tuning.chukoSize) / 100);
+    const spec = piece.type === 'khan'
+      ? {
+          width: clamp(visualW * .56, 46, 92),
+          height: clamp(visualW * .46, 38, 78),
+          radius: clamp(visualW * .12, 8, 18)
+        }
+      : {
+          width: clamp(visualW * .55, 34, 76),
+          height: clamp(visualW * .40, 25, 58),
+          radius: clamp(visualW * .11, 6, 15)
+        };
+
+    const body = M.Bodies.rectangle(
+      br.width * piece.x / 100,
+      br.height * piece.y / 100,
+      spec.width,
+      spec.height,
+      {
+        angle: piece.rotation * Math.PI / 180,
+        chamfer: { radius: spec.radius },
+        restitution: .08,
+        friction: .18,
+        frictionAir: .20,
+        isStatic: piece.type === 'khan',
+        collisionFilter: {
+          category: PHYSICS_CAT.PIECE,
+          mask: PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL
+        }
+      }
+    );
+
+    records.push({ piece, body });
+    M.Composite.add(engine.world, body);
+  }
+
+  // Solve collisions now, while nothing is visible. The entry animation then
+  // lands directly at these final positions, so there is no second correction.
+  for (let i = 0; i < 90; i++) M.Engine.update(engine, 1000 / 60);
+
+  for (const { piece, body } of records) {
+    piece.x = body.position.x / br.width * 100;
+    piece.y = body.position.y / br.height * 100;
+    piece.rotation = body.angle * 180 / Math.PI;
+  }
+
+  M.Composite.clear(engine.world, false, true);
+  M.Engine.clear(engine);
+}
 
 function getCarpetGeometry(referenceRect = host.getBoundingClientRect()) {
   const carpetEl = document.getElementById('carpetLayer');
@@ -641,7 +719,7 @@ function onPointerUp(e) {
   state.suppressClickUntil = Date.now() + 240;
   if (!moved || power < 24) { flashObjective('Оттяни чуко назад сильнее и отпусти'); return; }
   const snap = scenario.snapshot();
-  if (snap.failedStrikeRequired) {
+  if (snap.nextNormalHit === false) {
     if (!candidate || candidate.type !== 'normal') {
       flashObjective('Оттяни назад по линии к чуко того же цвета');
       return;
@@ -725,7 +803,7 @@ async function strikeTarget(source, target, power = 70) {
     src: target.src,
     pose: target.pose
   };
-  scenario.registerCollection();
+  scenario.registerNormalThrow(true);
 
   const hit = await runMatterStrike(source, target, { eject: true, power });
   if (!hit) {
@@ -784,9 +862,10 @@ async function strikeFailedTarget(source, target, power = 70) {
     return;
   }
 
-  scenario.registerFailedStrike();
-  state.phase = 'settled';
-  setObjective(scenario.resultText());
+  scenario.registerNormalThrow(false);
+  const after = scenario.snapshot();
+  state.phase = after.finished ? 'settled' : 'idle';
+  setObjectiveFromScenario();
   syncSelectorLock();
   refreshPieceVisuals();
   updateActionButton();
@@ -948,9 +1027,8 @@ function initPhysicsWorld() {
     M.Composite.add(engine.world, body);
   }
 
-  // Let Matter resolve any tiny starting intersections before interaction.
-  for (let i = 0; i < 32; i++) M.Engine.update(engine, 1000 / 60);
-
+  // Initial positions were already solved before the scatter animation.
+  // Do not run a second visible settling pass here.
   physics.ready = true;
   syncMatterDom();
   physics.lastTime = performance.now();
@@ -1563,10 +1641,12 @@ async function strikeKhan(source, khan, power = 70) {
     return;
   }
 
-  scenario.registerKhanHit();
+  const khanWins = scenario.snapshot().nextKhanHit !== false;
+  scenario.registerKhanAttempt(khanWins);
   state.phase = 'settled';
   setObjective(scenario.resultText());
-  celebrateKhan(khan.el);
+  if (khanWins) celebrateKhan(khan.el);
+  else pulse(khan.el, 1.06);
   syncSelectorLock();
   refreshPieceVisuals();
   updateActionButton();
@@ -1931,9 +2011,23 @@ function resetSlotDom() { document.querySelectorAll('.slot').forEach(slot => { s
 function updateSlotDom(index, piece) { const slot = document.querySelector(`.slot[data-slot-index="${index}"]`); if (!slot) return; const img = document.createElement('img'); img.src = piece.src; slot.innerHTML = ''; slot.appendChild(img); slot.classList.add('filled'); }
 function updateProgress() { const c1 = state.slots.slice(0, 3).filter(Boolean).length, c2 = state.slots.slice(3, 6).filter(Boolean).length; document.getElementById('zone1Progress').textContent = `${c1}/3`; document.getElementById('zone2Progress').textContent = `${c2}/3`; document.getElementById('upayZone1').classList.toggle('complete', c1 === 3); document.getElementById('upayZone2').classList.toggle('complete', c2 === 3); }
 
-function scenarioLabel(code) { return code.replaceAll('_', ' + '); }
+function scenarioLabel(code) { return String(code || '').replaceAll('_', ' + '); }
 function setObjective(text) { state.lastObjective = text; document.getElementById('objective').textContent = text; }
-function setObjectiveFromScenario() { const s = scenario.snapshot(); if (s.finished) return setObjective(scenario.resultText()); if (s.khanActive) return setObjective('ХАН! Выбери чуко-биту, оттяни назад и отпусти'); if (s.failedStrikeRequired) return setObjective('Последний бросок — оттяни чуко и отпусти'); if (s.collected === 0) return setObjective(`${document.getElementById('demoToggle').checked ? 'DEMO ' : ''}${scenarioLabel(s.scenario)} • Выбери чуко-биту`); setObjective(`${document.getElementById('demoToggle').checked ? 'DEMO ' : ''}${scenarioLabel(s.scenario)} • собрано ${s.collected}/${s.normalLimit}`); }
+function setObjectiveFromScenario() {
+  const s = scenario.snapshot();
+  const demo = document.getElementById('demoToggle').checked ? 'DEMO • ' : '';
+
+  if (s.finished) return setObjective(`${demo}${scenario.resultText()}`);
+  if (s.khanActive) return setObjective(`${demo}2 УПАЙ • ×25 • финальный удар по Хану`);
+
+  if (s.stage === 2) {
+    const n = Math.min(3, s.stageThrows + 1);
+    return setObjective(`${demo}1 УПАЙ • ×2 • доп. удар ${n}/3 • выбито ${s.collected}/6`);
+  }
+
+  const n = Math.min(3, s.stageThrows + 1);
+  return setObjective(`${demo}Удар ${n}/3 • выбито ${s.collected}`);
+}
 let flashTimer = null;
 function flashObjective(text) { clearTimeout(flashTimer); const old = state.lastObjective; document.getElementById('objective').textContent = text; flashTimer = setTimeout(() => { document.getElementById('objective').textContent = old; }, 1250); }
 function pulse(el, scale = 1.12) { if (!el) return; const base = el.style.transform; el.animate([{ transform: base }, { transform: `${base} scale(${scale})` }, { transform: base }], { duration: 340, easing: 'ease-out' }); }
@@ -1948,6 +2042,21 @@ window.UPAY2D = {
   getDenomination() { return state.denomination; },
   setScenario(code) { if (!Object.values(SCENARIOS).includes(code)) return false; state.externalScenarioCode = code; startNewGame(); return true; },
   clearScenarioOverride() { state.externalScenarioCode = null; },
+  setTicketPlan(hits, khanHit = false) {
+    state.externalScenarioCode = null;
+    scenario.setPlan({ hits, khanHit });
+    state.phase = 'idle';
+    state.selectedSourceId = null;
+    state.slots = Array(CONFIG.zones.totalSlots).fill(null);
+    resetSlotDom();
+    buildPieces();
+    renderPieces();
+    updateProgress();
+    setObjectiveFromScenario();
+    syncSelectorLock();
+    updateActionButton();
+    return scenario.snapshot();
+  },
   getScenario() { return scenario.snapshot(); },
   getTuning() { return { ...tuning }; },
   setTuning(partial = {}) {

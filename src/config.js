@@ -1,5 +1,5 @@
 export const CONFIG = {
-  version: '0.1.46-matter-air',
+  version: '0.1.47-scenario',
   currency: 'сом',
   denominations: [25, 50, 100],
   defaultDenomination: 50,
