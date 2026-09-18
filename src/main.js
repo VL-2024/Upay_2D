@@ -49,6 +49,22 @@ const drag = {
 };
 
 
+
+const PHYSICS_CAT = {
+  PIECE: 0x0001,
+  WALL: 0x0002,
+};
+
+const physics = {
+  engine: null,
+  raf: 0,
+  lastTime: 0,
+  walls: [],
+  ready: false,
+  geometry: null,
+  resizeTimer: 0,
+};
+
 const DEFAULT_TUNING = {
   chukoSize: 11.6,
   khanSize: 15.2,
@@ -58,7 +74,7 @@ const DEFAULT_TUNING = {
   pileHeight: 1.67,
   scatterScale: 0.71,
 };
-const TUNING_STORAGE_KEY = 'upay-preview-tuning-0141a';
+const TUNING_STORAGE_KEY = 'upay-main-tuning-0142-matter';
 
 function loadTuning() {
   try {
@@ -158,6 +174,13 @@ function setupUI() {
   document.addEventListener('pointermove', onPointerMove, { passive: false });
   document.addEventListener('pointerup', onPointerUp, { passive: false });
   document.addEventListener('pointercancel', cancelPull, { passive: false });
+
+  window.addEventListener('resize', () => {
+    clearTimeout(physics.resizeTimer);
+    physics.resizeTimer = setTimeout(() => {
+      if (state.phase !== 'animating') initPhysicsWorld();
+    }, 180);
+  });
 }
 
 function ensureSlots(zoneId, startIndex) {
@@ -496,6 +519,7 @@ function makeRandomScatter(count) {
 }
 
 function renderPieces() {
+  destroyPhysicsWorld();
   host.innerHTML = '';
   const layoutRevision = ++state.layoutRevision;
   state.pieces.forEach((p, index) => {
@@ -519,12 +543,12 @@ function renderPieces() {
   });
   refreshPieceVisuals();
 
-  // Longest scatter animation is below 1 second. Resolving overlaps only after
-  // it finishes avoids reading temporary transformed positions at the left edge.
+  // Start the Matter.js world only after the entry animation. From this point
+  // collisions, separation, spin and carpet boundaries are handled by Matter.
   setTimeout(() => {
     if (layoutRevision !== state.layoutRevision) return;
-    resolveAllPieceOverlaps();
-  }, 1050);
+    initPhysicsWorld();
+  }, 960);
 }
 
 function animateScatterIn(piece, index) {
@@ -620,16 +644,16 @@ function onPointerUp(e) {
       flashObjective('Оттяни назад по линии к чуко того же цвета');
       return;
     }
-    strikeFailedTarget(source, candidate);
+    strikeFailedTarget(source, candidate, power);
     return;
   }
   if (snap.khanActive) {
     if (candidate?.type !== 'khan') { flashObjective('Оттяни назад по линии к Хану'); return; }
-    strikeKhan(source, candidate);
+    strikeKhan(source, candidate, power);
     return;
   }
   if (!candidate) { flashObjective('Оттяни назад по линии к подсвеченному чуко'); return; }
-  strikeTarget(source, candidate);
+  strikeTarget(source, candidate, power);
 }
 
 function cancelPull() {
@@ -666,7 +690,7 @@ function showPullGuide(sx, sy, angle, power, px, py) {
 }
 function hidePullGuide() { const ui = state.pullUI; if (!ui) return; ui.sector.style.display = 'none'; ui.elastic.style.display = 'none'; ui.handle.style.display = 'none'; ui.label.style.display = 'none'; }
 
-async function strikeTarget(source, target) {
+async function strikeTarget(source, target, power = 70) {
   state.phase = 'animating';
   state.selectedSourceId = null;
   syncSelectorLock();
@@ -701,7 +725,7 @@ async function strikeTarget(source, target) {
   };
   scenario.registerCollection();
 
-  const hit = await animateChukoStrike2072(source, target, { eject: true });
+  const hit = await runMatterStrike(source, target, { eject: true, power });
   if (!hit) {
     state.phase = 'idle';
     syncSelectorLock();
@@ -741,14 +765,14 @@ async function strikeTarget(source, target) {
 }
 
 
-async function strikeFailedTarget(source, target) {
+async function strikeFailedTarget(source, target, power = 70) {
   state.phase = 'animating';
   state.selectedSourceId = null;
   syncSelectorLock();
   refreshPieceVisuals();
   updateActionButton();
 
-  const hit = await animateChukoStrike2072(source, target, { eject: false });
+  const hit = await runMatterStrike(source, target, { eject: false, power });
   if (!hit) {
     state.phase = 'idle';
     setObjectiveFromScenario();
@@ -768,314 +792,387 @@ async function strikeFailedTarget(source, target) {
 
 
 
-async function animateChukoStrike2072(source, target, { eject = true } = {}) {
-  const sourceEl = source?.el;
-  const targetEl = target?.el;
-  if (!sourceEl || !targetEl) return null;
 
-  const frozenSrc = source.src;
-  const frozenPose = source.pose;
-  const hostRect = host.getBoundingClientRect();
-  const sr = sourceEl.getBoundingClientRect();
-  const tr = targetEl.getBoundingClientRect();
+function getMatter() {
+  return window.Matter || null;
+}
 
-  const sx = sr.left + sr.width / 2;
-  const sy = sr.top + sr.height / 2;
-  const tx = tr.left + tr.width / 2;
-  const ty = tr.top + tr.height / 2;
+function destroyPhysicsWorld() {
+  const M = getMatter();
+  if (physics.raf) cancelAnimationFrame(physics.raf);
+  physics.raf = 0;
+  physics.ready = false;
+  physics.lastTime = 0;
 
-  const dx = tx - sx;
-  const dy = ty - sy;
-  const dist = Math.max(1, Math.hypot(dx, dy));
-  const ux = dx / dist;
-  const uy = dy / dist;
-
-  // Visual contact point. Transparent margins in the WebP assets are ignored.
-  const contactGap = Math.max(15, (sr.width + tr.width) * .155);
-  const impactX = tx - ux * contactGap;
-  const impactY = ty - uy * contactGap;
-
-  const sourceStartLeft = sx - hostRect.left;
-  const sourceStartTop = sy - hostRect.top;
-  const impactLeft = impactX - hostRect.left;
-  const impactTop = impactY - hostRect.top;
-
-  const baseRot = source.rotation;
-  const spinSign = ux >= 0 ? 1 : -1;
-  const impactRot = normalizeDeg(baseRot + spinSign * 30);
-
-  // Striker rebound: a small hop, visible spin and a short backwards bounce.
-  const rebound = clamp(sr.width * .16, 10, 18);
-  const reboundSide = (Math.random() - .5) * clamp(sr.width * .07, 3, 7);
-  const reboundLeft = impactLeft - ux * rebound + (-uy) * reboundSide;
-  const reboundTop = impactTop - uy * rebound + ux * reboundSide;
-  const reboundHop = clamp(sr.height * .12, 7, 13);
-  const reboundRot = normalizeDeg(impactRot + spinSign * (72 + Math.random() * 34));
-  const settleLeft = reboundLeft + ux * clamp(sr.width * .035, 2, 5);
-  const settleTop = reboundTop + uy * clamp(sr.height * .025, 1, 4);
-  const settleRot = normalizeDeg(reboundRot - spinSign * (12 + Math.random() * 8));
-
-  const targetLocalX = tx - hostRect.left;
-  const targetLocalY = ty - hostRect.top;
-  const carpet = getCarpetGeometry(hostRect);
-
-  const tangentAmount = (Math.random() * .12) - .06;
-  let dirX = ux + (-uy) * tangentAmount;
-  let dirY = uy + ux * tangentAmount;
-  const dirLen = Math.hypot(dirX, dirY) || 1;
-  dirX /= dirLen;
-  dirY /= dirLen;
-
-  const px = targetLocalX - carpet.cx;
-  const py = targetLocalY - carpet.cy;
-  const A = (dirX * dirX) / (carpet.rx * carpet.rx) + (dirY * dirY) / (carpet.ry * carpet.ry);
-  const B = 2 * ((px * dirX) / (carpet.rx * carpet.rx) + (py * dirY) / (carpet.ry * carpet.ry));
-  const C = (px * px) / (carpet.rx * carpet.rx) + (py * py) / (carpet.ry * carpet.ry) - 1;
-  const disc = Math.max(0, B * B - 4 * A * C);
-  let edgeDistance = (-B + Math.sqrt(disc)) / (2 * A);
-  if (!Number.isFinite(edgeDistance) || edgeDistance < 18) edgeDistance = Math.min(hostRect.width * .22, 125);
-
-  let endX, endY, c1x, c1y, c2x, c2y, targetDuration, targetSpin, hopHeight;
-
-  if (eject) {
-    const exitExtra = clamp(hostRect.width * .050, 20, 32);
-    endX = targetLocalX + dirX * (edgeDistance + exitExtra);
-    endY = targetLocalY + dirY * (edgeDistance + exitExtra);
-
-    const halfW = tr.width * .52;
-    const halfH = tr.height * .52;
-    endX = clamp(endX, halfW + 9, hostRect.width - halfW - 9);
-    endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
-
-    const exNorm = (endX - carpet.cx) / carpet.rx;
-    const eyNorm = (endY - carpet.cy) / carpet.ry;
-    if (exNorm * exNorm + eyNorm * eyNorm <= 1.02) {
-      const scaleOut = 1.045 / Math.max(.001, Math.sqrt(exNorm * exNorm + eyNorm * eyNorm));
-      endX = carpet.cx + (endX - carpet.cx) * scaleOut;
-      endY = carpet.cy + (endY - carpet.cy) * scaleOut;
-      endX = clamp(endX, halfW + 9, hostRect.width - halfW - 9);
-      endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
-    }
-
-    const push = clamp(tr.width * .52, 34, 52);
-    c1x = targetLocalX + dirX * push;
-    c1y = targetLocalY + dirY * push;
-    c2x = endX - dirX * clamp(tr.width * .38, 28, 44);
-    c2y = endY - dirY * clamp(tr.width * .38, 28, 44);
-    targetDuration = 690 + Math.random() * 120;
-    targetSpin = ((Math.random() * 2.2) - 1.1) * Math.PI;
-    hopHeight = clamp(tr.height * .11, 7, 14);
-  } else {
-    const moveTowardEdge = Math.random() < .58;
-    if (moveTowardEdge) {
-      const safeTravel = Math.max(20, edgeDistance - clamp(tr.width * .72, 38, 62));
-      const maxTravel = Math.max(28, Math.min(115, safeTravel));
-      const travel = clamp(safeTravel * (.58 + Math.random() * .20), 28, maxTravel);
-      endX = targetLocalX + dirX * travel;
-      endY = targetLocalY + dirY * travel;
-
-      const nx = (endX - carpet.cx) / carpet.rx;
-      const ny = (endY - carpet.cy) / carpet.ry;
-      const n = Math.hypot(nx, ny);
-      if (n > .86) {
-        const k = .86 / n;
-        endX = carpet.cx + (endX - carpet.cx) * k;
-        endY = carpet.cy + (endY - carpet.cy) * k;
-      }
-
-      c1x = targetLocalX + dirX * Math.min(34, travel * .38);
-      c1y = targetLocalY + dirY * Math.min(34, travel * .38);
-      c2x = targetLocalX + (endX - targetLocalX) * .78;
-      c2y = targetLocalY + (endY - targetLocalY) * .78;
-      targetDuration = 450 + Math.random() * 90;
-      targetSpin = ((Math.random() * 1.0) - .5) * Math.PI;
-      hopHeight = clamp(tr.height * .15, 9, 17);
-    } else {
-      const travel = clamp(tr.width * (.11 + Math.random() * .09), 8, 17);
-      endX = targetLocalX + dirX * travel;
-      endY = targetLocalY + dirY * travel;
-      c1x = targetLocalX + dirX * travel * .52;
-      c1y = targetLocalY + dirY * travel * .52;
-      c2x = targetLocalX + dirX * travel * .88;
-      c2y = targetLocalY + dirY * travel * .88;
-      targetDuration = 360 + Math.random() * 70;
-      targetSpin = ((Math.random() * .50) - .25) * Math.PI;
-      hopHeight = clamp(tr.height * .20, 11, 21);
-    }
+  if (M && physics.engine) {
+    try { M.Composite.clear(physics.engine.world, false, true); } catch {}
+    try { M.Engine.clear(physics.engine); } catch {}
   }
 
-  const targetStartRot = target.rotation;
+  physics.engine = null;
+  physics.walls = [];
+  physics.geometry = null;
+  for (const piece of state.pieces) piece.body = null;
+}
 
-  sourceEl.classList.remove(
-    'selected', 'source-ready', 'valid-target', 'invalid-target',
-    'aim-candidate', 'pose-guide-match', 'pose-guide-dim'
-  );
-  sourceEl.style.zIndex = '90';
-  sourceEl.style.pointerEvents = 'none';
-  targetEl.style.zIndex = '80';
-  targetEl.style.pointerEvents = 'none';
-
-  let targetMotionPromise = null;
-  let impactStarted = false;
-
-  function startImpactNow() {
-    if (impactStarted) return;
-    impactStarted = true;
-
-    createImpactBurst(
-      impactX + ux * contactGap * .58,
-      impactY + uy * contactGap * .58
-    );
-
-    // Any chuko physically close to the first part of the target's path gets
-    // a small permanent displacement, as if the moving chuko clipped it.
-    nudgeNeighboringChuko(
-      source,
-      target,
-      targetLocalX,
-      targetLocalY,
-      endX,
-      endY,
-      dirX,
-      dirY,
-      carpet
-    );
-
-    targetMotionPromise = new Promise(resolve => {
-      const startTime = performance.now();
-
-      function moveTarget(now) {
-        const raw = Math.min(1, (now - startTime) / targetDuration);
-        // Strong initial acceleration: the target moves on the same rendered
-        // frame as the visible impact, not after the striker has rebounded.
-        const t = 1 - Math.pow(1 - raw, 2.7);
-        const mt = 1 - t;
-
-        const x =
-          mt * mt * mt * targetLocalX +
-          3 * mt * mt * t * c1x +
-          3 * mt * t * t * c2x +
-          t * t * t * endX;
-        const pathY =
-          mt * mt * mt * targetLocalY +
-          3 * mt * mt * t * c1y +
-          3 * mt * t * t * c2y +
-          t * t * t * endY;
-        const y = pathY - Math.sin(Math.PI * raw) * hopHeight;
-
-        targetEl.style.left = `${x}px`;
-        targetEl.style.top = `${y}px`;
-        targetEl.style.transform =
-          `translate(-50%,-50%) rotate(${targetStartRot + (targetSpin * t * 180 / Math.PI)}deg)`;
-
-        if (raw < 1) {
-          requestAnimationFrame(moveTarget);
-        } else {
-          target.x = (endX / hostRect.width) * 100;
-          target.y = (endY / hostRect.height) * 100;
-          target.rotation = normalizeDeg(targetStartRot + targetSpin * 180 / Math.PI);
-          targetEl.style.left = `${target.x}%`;
-          targetEl.style.top = `${target.y}%`;
-          targetEl.style.transform =
-            `translate(-50%,-50%) rotate(${target.rotation}deg)`;
-          targetEl.style.zIndex = '';
-          targetEl.style.pointerEvents = '';
-          if (!eject) settlePieceNoOverlap(target, { carpet, keepInside: true });
-          resolve();
-        }
-      }
-
-      requestAnimationFrame(moveTarget);
-    });
+function getMatterCarpetGeometry(referenceRect = host.getBoundingClientRect()) {
+  const carpetEl = document.getElementById('carpetLayer');
+  const r = carpetEl?.getBoundingClientRect();
+  if (!r || !r.width || !r.height) {
+    const radius = referenceRect.width * .40;
+    return {
+      cx: referenceRect.width * .50,
+      cy: referenceRect.height * .455,
+      rx: radius * .92,
+      ry: radius * .64
+    };
   }
-
-  // One RAF loop controls the striker. Starting the target from inside this
-  // loop eliminates the old timeout-induced pause at collision.
-  const sourcePromise = new Promise(resolve => {
-    const sourceDuration = 430;
-    const impactAt = .47;
-    const startTime = performance.now();
-
-    function moveSource(now) {
-      const raw = Math.min(1, (now - startTime) / sourceDuration);
-
-      let x, y, rot, scale = 1;
-      if (raw < .12) {
-        const e = 1 - Math.pow(1 - raw / .12, 3);
-        x = sourceStartLeft - ux * 7 * e;
-        y = sourceStartTop - uy * 7 * e - Math.sin(Math.PI * e) * 1.5;
-        rot = baseRot - spinSign * 6 * e;
-        scale = 1 + .012 * e;
-      } else if (raw < impactAt) {
-        const e = 1 - Math.pow(1 - (raw - .12) / (impactAt - .12), 3);
-        const fromX = sourceStartLeft - ux * 7;
-        const fromY = sourceStartTop - uy * 7;
-        x = fromX + (impactLeft - fromX) * e;
-        y = fromY + (impactTop - fromY) * e - Math.sin(Math.PI * e) * 4;
-        rot = baseRot - spinSign * 6 + spinSign * 36 * e;
-        scale = 1.012 + .022 * e;
-
-        if (!impactStarted && raw >= impactAt - .012) startImpactNow();
-      } else if (raw < .76) {
-        if (!impactStarted) startImpactNow();
-        const e = 1 - Math.pow(1 - (raw - impactAt) / (.76 - impactAt), 2.7);
-        x = impactLeft + (reboundLeft - impactLeft) * e;
-        y = impactTop + (reboundTop - impactTop) * e - Math.sin(Math.PI * e) * reboundHop;
-        rot = impactRot + normalizeDeg(reboundRot - impactRot) * e;
-        scale = 1.034 - .015 * e + Math.sin(Math.PI * e) * .025;
-      } else {
-        const e = 1 - Math.pow(1 - (raw - .76) / .24, 3);
-        x = reboundLeft + (settleLeft - reboundLeft) * e;
-        y = reboundTop + (settleTop - reboundTop) * e - Math.sin(Math.PI * e) * 2;
-        rot = reboundRot + normalizeDeg(settleRot - reboundRot) * e;
-        scale = 1.019 - .019 * e;
-      }
-
-      sourceEl.style.left = `${x}px`;
-      sourceEl.style.top = `${y}px`;
-      sourceEl.style.transform =
-        `translate(-50%,-50%) rotate(${rot}deg) scale(${scale})`;
-
-      if (raw < 1) {
-        requestAnimationFrame(moveSource);
-      } else {
-        if (!impactStarted) startImpactNow();
-        resolve();
-      }
-    }
-
-    requestAnimationFrame(moveSource);
-  });
-
-  await sourcePromise;
-  if (targetMotionPromise) await targetMotionPromise;
-
-  source.x = (settleLeft / hostRect.width) * 100;
-  source.y = (settleTop / hostRect.height) * 100;
-  source.rotation = settleRot;
-  source.src = frozenSrc;
-  source.pose = frozenPose;
-  sourceEl.src = frozenSrc;
-  sourceEl.dataset.pose = frozenPose;
-  sourceEl.style.left = `${source.x}%`;
-  sourceEl.style.top = `${source.y}%`;
-  sourceEl.style.transform =
-    `translate(-50%,-50%) rotate(${source.rotation}deg)`;
-  sourceEl.style.zIndex = '';
-  sourceEl.style.pointerEvents = '';
-  settlePieceNoOverlap(source, { carpet, keepInside: true });
 
   return {
-    ux: dirX,
-    uy: dirY,
-    impactX,
-    impactY,
-    targetEndX: endX,
-    targetEndY: endY,
-    eject
+    cx: r.left + r.width / 2 - referenceRect.left,
+    cy: r.top + r.height / 2 - referenceRect.top,
+    rx: r.width * .455,
+    ry: r.height * .315
   };
 }
 
+function getMatterBodySpec(piece) {
+  const r = piece?.el?.getBoundingClientRect?.();
+  const fallback = host.getBoundingClientRect().width * (piece?.type === 'khan' ? .09 : .065);
+  if (!r || !r.width || !r.height) {
+    return { width: fallback * 1.35, height: fallback, radius: fallback * .25 };
+  }
+
+  if (piece.type === 'khan') {
+    return {
+      width: clamp(r.width * .56, 46, 92),
+      height: clamp(r.height * .46, 38, 78),
+      radius: clamp(Math.min(r.width, r.height) * .12, 8, 18)
+    };
+  }
+
+  return {
+    width: clamp(r.width * .55, 34, 76),
+    height: clamp(r.height * .40, 25, 58),
+    radius: clamp(Math.min(r.width, r.height) * .11, 6, 15)
+  };
+}
+
+function createMatterCarpetWalls(M, geometry) {
+  const count = 40;
+  const step = Math.PI * 2 / count;
+  const thickness = clamp(host.getBoundingClientRect().width * .024, 16, 26);
+  const walls = [];
+
+  for (let i = 0; i < count; i++) {
+    const a = i * step;
+    const x = geometry.cx + Math.cos(a) * geometry.rx;
+    const y = geometry.cy + Math.sin(a) * geometry.ry;
+    const tx = -geometry.rx * Math.sin(a);
+    const ty = geometry.ry * Math.cos(a);
+    const angle = Math.atan2(ty, tx);
+    const length = Math.hypot(tx, ty) * step * 1.28;
+
+    const wall = M.Bodies.rectangle(x, y, length, thickness, {
+      isStatic: true,
+      angle,
+      restitution: .48,
+      friction: .06,
+      label: 'carpet-wall',
+      collisionFilter: {
+        category: PHYSICS_CAT.WALL,
+        mask: PHYSICS_CAT.PIECE
+      }
+    });
+
+    walls.push(wall);
+  }
+
+  return walls;
+}
+
+function initPhysicsWorld() {
+  const M = getMatter();
+  if (!M || !host.isConnected) {
+    console.error('Matter.js is not available');
+    return false;
+  }
+
+  destroyPhysicsWorld();
+
+  const br = host.getBoundingClientRect();
+  if (!br.width || !br.height) return false;
+
+  const engine = M.Engine.create({ enableSleeping: true });
+  engine.gravity.x = 0;
+  engine.gravity.y = 0;
+  engine.gravity.scale = 0;
+  engine.positionIterations = 12;
+  engine.velocityIterations = 10;
+  engine.constraintIterations = 4;
+
+  physics.engine = engine;
+  physics.geometry = getMatterCarpetGeometry(br);
+  physics.walls = createMatterCarpetWalls(M, physics.geometry);
+  M.Composite.add(engine.world, physics.walls);
+
+  for (const piece of state.pieces) {
+    if (!piece?.el || piece.el.style.visibility === 'hidden') continue;
+
+    const spec = getMatterBodySpec(piece);
+    const x = br.width * (piece.x / 100);
+    const y = br.height * (piece.y / 100);
+
+    const body = M.Bodies.rectangle(x, y, spec.width, spec.height, {
+      angle: piece.rotation * Math.PI / 180,
+      chamfer: { radius: spec.radius },
+      restitution: piece.type === 'khan' ? .42 : .54,
+      friction: .055,
+      frictionStatic: .08,
+      frictionAir: piece.type === 'khan' ? .07 : .055,
+      density: piece.type === 'khan' ? .0032 : .0022,
+      slop: .35,
+      isStatic: piece.type === 'khan',
+      label: 'piece:' + piece.id,
+      collisionFilter: {
+        category: PHYSICS_CAT.PIECE,
+        mask: PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL
+      }
+    });
+
+    body.plugin.upayPieceId = piece.id;
+    piece.body = body;
+    M.Composite.add(engine.world, body);
+  }
+
+  // Let Matter resolve any tiny starting intersections before interaction.
+  for (let i = 0; i < 32; i++) M.Engine.update(engine, 1000 / 60);
+
+  physics.ready = true;
+  syncMatterDom();
+  physics.lastTime = performance.now();
+  physics.raf = requestAnimationFrame(stepMatterWorld);
+  return true;
+}
+
+function stepMatterWorld(now) {
+  if (!physics.engine) return;
+  const M = getMatter();
+  const dt = clamp(now - (physics.lastTime || now), 8, 33.333);
+  physics.lastTime = now;
+  M.Engine.update(physics.engine, dt);
+  syncMatterDom();
+  physics.raf = requestAnimationFrame(stepMatterWorld);
+}
+
+function syncMatterDom() {
+  if (!physics.engine) return;
+  const br = host.getBoundingClientRect();
+  if (!br.width || !br.height) return;
+
+  for (const piece of state.pieces) {
+    if (!piece?.body || !piece.el) continue;
+    if (drag.active && drag.source?.id === piece.id) continue;
+
+    piece.x = piece.body.position.x / br.width * 100;
+    piece.y = piece.body.position.y / br.height * 100;
+    piece.rotation = piece.body.angle * 180 / Math.PI;
+
+    piece.el.style.left = piece.x + '%';
+    piece.el.style.top = piece.y + '%';
+    piece.el.style.transform = 'translate(-50%,-50%) rotate(' + piece.rotation + 'deg)';
+  }
+}
+
+function ensurePhysicsWorld() {
+  if (physics.ready && physics.engine) return true;
+  return initPhysicsWorld();
+}
+
+function removePhysicsBody(piece) {
+  const M = getMatter();
+  if (!M || !physics.engine || !piece?.body) return;
+  try { M.Composite.remove(physics.engine.world, piece.body); } catch {}
+  piece.body = null;
+}
+
+function matterCarpetNorm(position) {
+  const g = physics.geometry || getMatterCarpetGeometry();
+  const nx = (position.x - g.cx) / Math.max(1, g.rx);
+  const ny = (position.y - g.cy) / Math.max(1, g.ry);
+  return Math.hypot(nx, ny);
+}
+
+async function runMatterStrike(source, target, { eject = false, power = 70, isKhan = false } = {}) {
+  const M = getMatter();
+  if (!M || !source?.el || !target?.el) return null;
+  if (!ensurePhysicsWorld()) return null;
+
+  const sourceBody = source.body;
+  const targetBody = target.body;
+  if (!sourceBody || !targetBody) return null;
+
+  source.el.getAnimations().forEach(a => { try { a.cancel(); } catch {} });
+  target.el.getAnimations().forEach(a => { try { a.cancel(); } catch {} });
+
+  source.el.style.pointerEvents = 'none';
+  target.el.style.pointerEvents = 'none';
+  source.el.style.zIndex = '90';
+  target.el.style.zIndex = '80';
+
+  M.Sleeping.set(sourceBody, false);
+  M.Sleeping.set(targetBody, false);
+  if (isKhan && targetBody.isStatic) M.Body.setStatic(targetBody, false);
+
+  sourceBody.collisionFilter.mask = PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL;
+  targetBody.collisionFilter.mask = eject
+    ? PHYSICS_CAT.PIECE
+    : (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
+
+  sourceBody.frictionAir = .038;
+  targetBody.frictionAir = eject ? .016 : (isKhan ? .045 : .058);
+
+  M.Body.setVelocity(sourceBody, { x: 0, y: 0 });
+  M.Body.setAngularVelocity(sourceBody, 0);
+
+  const dx = targetBody.position.x - sourceBody.position.x;
+  const dy = targetBody.position.y - sourceBody.position.y;
+  const dist = Math.max(1, Math.hypot(dx, dy));
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const spinSign = ux >= 0 ? 1 : -1;
+  const speed = clamp(10.8 + power * .052, 11.8, 17.2);
+
+  let collided = false;
+  let finished = false;
+  let stableFrames = 0;
+  let assisted = false;
+  const startedAt = performance.now();
+  let impactPoint = null;
+
+  const onCollision = event => {
+    if (collided) return;
+    for (const pair of event.pairs) {
+      const a = pair.bodyA;
+      const b = pair.bodyB;
+      const hit =
+        (a === sourceBody && b === targetBody) ||
+        (a === targetBody && b === sourceBody);
+      if (!hit) continue;
+
+      collided = true;
+      const support = pair.collision?.supports?.[0];
+      impactPoint = support
+        ? { x: support.x, y: support.y }
+        : {
+            x: (sourceBody.position.x + targetBody.position.x) * .5,
+            y: (sourceBody.position.y + targetBody.position.y) * .5
+          };
+
+      const br = host.getBoundingClientRect();
+      createImpactBurst(br.left + impactPoint.x, br.top + impactPoint.y);
+
+      // Extra rotational impulse at the contact point. Translation and all
+      // secondary collisions remain entirely inside Matter.js.
+      M.Body.setAngularVelocity(
+        sourceBody,
+        sourceBody.angularVelocity + spinSign * .22
+      );
+
+      break;
+    }
+  };
+
+  M.Events.on(physics.engine, 'collisionStart', onCollision);
+  M.Events.on(physics.engine, 'collisionActive', onCollision);
+
+  M.Body.setVelocity(sourceBody, { x: ux * speed, y: uy * speed });
+  M.Body.setAngularVelocity(sourceBody, spinSign * (.18 + power / 950));
+
+  const result = await new Promise(resolve => {
+    function finish(ok = true) {
+      if (finished) return;
+      finished = true;
+      resolve(ok);
+    }
+
+    function watch() {
+      if (!physics.engine || !source.body || !target.body) return finish(false);
+
+      const elapsed = performance.now() - startedAt;
+      const sourceSpeed = sourceBody.speed;
+      const targetSpeed = targetBody.speed;
+      const targetSpin = Math.abs(targetBody.angularVelocity);
+
+      if (collided && eject) {
+        if (matterCarpetNorm(targetBody.position) > 1.035) {
+          M.Body.setVelocity(targetBody, { x: 0, y: 0 });
+          M.Body.setAngularVelocity(targetBody, 0);
+          return finish(true);
+        }
+
+        // In a dense cluster a real collision can spend too much energy on
+        // neighbours. Add one small physical impulse so a winning piece still
+        // completes the prescribed lottery outcome.
+        if (!assisted && elapsed > 950 && matterCarpetNorm(targetBody.position) < .98) {
+          assisted = true;
+          M.Body.setVelocity(targetBody, {
+            x: targetBody.velocity.x + ux * 4.2,
+            y: targetBody.velocity.y + uy * 4.2
+          });
+          M.Body.setAngularVelocity(
+            targetBody,
+            targetBody.angularVelocity + spinSign * .12
+          );
+        }
+      }
+
+      if (collided && !eject) {
+        if (sourceSpeed < .42 && targetSpeed < .42 && targetSpin < .035) stableFrames++;
+        else stableFrames = 0;
+
+        if (stableFrames > 10 || elapsed > (isKhan ? 1350 : 1750)) {
+          if (isKhan) {
+            M.Body.setVelocity(targetBody, { x: 0, y: 0 });
+            M.Body.setAngularVelocity(targetBody, 0);
+            M.Body.setStatic(targetBody, true);
+          }
+          return finish(true);
+        }
+      }
+
+      if (!collided && elapsed > 1500) return finish(false);
+      if (elapsed > 2800) return finish(collided);
+      requestAnimationFrame(watch);
+    }
+
+    requestAnimationFrame(watch);
+  });
+
+  M.Events.off(physics.engine, 'collisionStart', onCollision);
+  M.Events.off(physics.engine, 'collisionActive', onCollision);
+
+  sourceBody.frictionAir = .055;
+  if (target.body) {
+    targetBody.collisionFilter.mask = PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL;
+    if (!isKhan) targetBody.frictionAir = .055;
+  }
+
+  source.el.style.pointerEvents = '';
+  target.el.style.pointerEvents = '';
+  source.el.style.zIndex = '';
+  target.el.style.zIndex = '';
+
+  syncMatterDom();
+
+  return result ? {
+    ux,
+    uy,
+    impactX: impactPoint?.x ?? targetBody.position.x,
+    impactY: impactPoint?.y ?? targetBody.position.y,
+    eject
+  } : null;
+}
 
 function getPieceCollisionRadius(piece) {
   const r = piece?.el?.getBoundingClientRect?.();
@@ -1323,16 +1420,36 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
     });
 }
 
-async function strikeKhan(source, khan) {
-  state.phase = 'animating'; state.selectedSourceId = null; syncSelectorLock(); refreshPieceVisuals(); updateActionButton();
-  const hit = await animateSourceToTarget(source, khan, true);
-  if (!hit) return;
-  kickKhan(khan.el, hit.ux, hit.uy);
+
+async function strikeKhan(source, khan, power = 70) {
+  state.phase = 'animating';
+  state.selectedSourceId = null;
+  syncSelectorLock();
+  refreshPieceVisuals();
+  updateActionButton();
+
+  const hit = await runMatterStrike(source, khan, {
+    eject: false,
+    power,
+    isKhan: true
+  });
+
+  if (!hit) {
+    state.phase = 'idle';
+    setObjectiveFromScenario();
+    syncSelectorLock();
+    refreshPieceVisuals();
+    updateActionButton();
+    return;
+  }
+
   scenario.registerKhanHit();
   state.phase = 'settled';
   setObjective(scenario.resultText());
   celebrateKhan(khan.el);
-  syncSelectorLock(); refreshPieceVisuals(); updateActionButton();
+  syncSelectorLock();
+  refreshPieceVisuals();
+  updateActionButton();
 }
 
 async function animateSourceToTarget(source, target, isKhan = false) {
@@ -1514,6 +1631,7 @@ async function ejectTargetToCarpetEdge(target, ux, uy) {
 }
 
 async function flyToSlot(piece, slotIndex) {
+  removePhysicsBody(piece);
   const el = piece?.el, slot = document.querySelector(`.slot[data-slot-index="${slotIndex}"]`);
   if (!el || !slot) return;
   const a = el.getBoundingClientRect(), b = slot.getBoundingClientRect();
