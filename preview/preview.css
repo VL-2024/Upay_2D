@@ -1,0 +1,44 @@
+
+/* UPAY 2D v0.1.35 preview — isolated split-scene build */
+.bg-layer{
+  background-image:url('../assets/ref/upay_background_ground.webp?v=0135') !important;
+  background-position:center top !important;
+  background-size:100% 100% !important;
+  background-repeat:no-repeat !important;
+}
+.carpet-layer{
+  position:absolute;
+  left:50%;
+  top:45.5%;
+  width:84%;
+  aspect-ratio:1/1;
+  transform:translate(-50%,-50%);
+  background:url('../assets/ref/upay_carpet_blue.webp?v=0135') center/contain no-repeat;
+  z-index:1;
+  pointer-events:none;
+  filter:drop-shadow(0 12px 12px rgba(35,34,28,.16));
+}
+#pixiHost{z-index:2 !important}
+.preview-badge{
+  position:absolute;
+  right:14px;
+  bottom:8px;
+  z-index:7;
+  padding:4px 7px;
+  border-radius:8px;
+  color:rgba(255,255,255,.82);
+  background:rgba(5,25,43,.42);
+  font-size:9px;
+  font-weight:800;
+  pointer-events:none;
+}
+@media(max-width:700px){
+  .bg-layer{
+    background-position:center top !important;
+    background-size:100% 100% !important;
+  }
+  .carpet-layer{
+    top:45.5%;
+    width:88%;
+  }
+}
