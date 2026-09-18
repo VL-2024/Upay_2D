@@ -106,10 +106,10 @@ function injectStyles() {
     .game-piece.selected{z-index:60!important;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 14px #63dfff) drop-shadow(0 7px 5px rgba(0,0,0,.28))!important}
     .game-piece.source-ready{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 9px rgba(77,214,255,.85)) drop-shadow(0 6px 5px rgba(0,0,0,.22))!important}
     .game-piece.valid-target{opacity:1!important;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 14px #ffd96c) drop-shadow(0 6px 5px rgba(0,0,0,.22))!important}
-    .game-piece.invalid-target{opacity:.45!important;filter:brightness(.88) drop-shadow(0 4px 3px rgba(0,0,0,.16))!important}
+    .game-piece.invalid-target{opacity:1!important;filter:brightness(.78) saturate(.78) drop-shadow(0 4px 3px rgba(0,0,0,.18))!important}
     .game-piece.aim-candidate{opacity:1!important;filter:drop-shadow(0 0 5px #fff) drop-shadow(0 0 20px #ffe078) drop-shadow(0 0 28px rgba(255,188,40,.68))!important}
     .game-piece.pose-guide-match{opacity:1!important;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 14px #65ddff) drop-shadow(0 6px 5px rgba(0,0,0,.22))!important}
-    .game-piece.pose-guide-dim{opacity:.34!important;filter:brightness(.82) drop-shadow(0 4px 3px rgba(0,0,0,.14))!important}
+    .game-piece.pose-guide-dim{opacity:1!important;filter:brightness(.72) saturate(.72) drop-shadow(0 4px 3px rgba(0,0,0,.18))!important}
     .game-piece.khan.active{opacity:1!important;filter:drop-shadow(0 0 7px #fff) drop-shadow(0 0 22px #ffd45f) drop-shadow(0 0 35px rgba(255,170,38,.86))!important;animation:khanPulse0128 1.2s ease-in-out infinite}
     @keyframes khanPulse0128{0%,100%{scale:1}50%{scale:1.06}}
 
@@ -990,9 +990,9 @@ function syncMatterDom() {
       const progress = clamp(travelled / Math.max(1, f.distance), 0, 1);
       // Land before the physical target contact so the visual chuko hits it
       // rather than appearing to collide while still in the air.
-      const airT = clamp(progress / .84, 0, 1);
+      const airT = clamp(progress / .88, 0, 1);
       lift = Math.sin(Math.PI * airT) * f.maxLift;
-      scale = 1 + Math.sin(Math.PI * airT) * .085;
+      scale = 1 + Math.sin(Math.PI * airT) * .13;
     }
 
     piece.el.style.left = piece.x + '%';
@@ -1079,7 +1079,7 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
     startX: sourceBody.position.x,
     startY: sourceBody.position.y,
     distance: dist,
-    maxLift: clamp(host.getBoundingClientRect().width * .075, 34, 62)
+    maxLift: clamp(host.getBoundingClientRect().width * .135, 64, 110)
   };
 
   let collided = false;
@@ -1847,6 +1847,7 @@ function refreshPieceVisuals() {
   const snap = scenario.snapshot(), source = getSelectedSource(), validIds = new Set(source && !snap.khanActive ? getValidTargets(source).map(p => p.id) : []);
   for (const p of state.pieces) {
     if (!p.el || p.collected) continue;
+    p.el.style.opacity = '1';
     p.el.classList.remove('selected', 'source-ready', 'valid-target', 'invalid-target', 'pose-guide-match', 'pose-guide-dim');
     if (p.type === 'normal') {
       if (p.id === state.selectedSourceId) p.el.classList.add('selected');
