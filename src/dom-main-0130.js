@@ -453,8 +453,9 @@ async function strikeTarget(source, target) {
 
   const hit = await animateSourceToTarget(source, target);
   if (!hit) return;
+  await sleep(85);
   await ejectTargetToCarpetEdge(target, hit.ux, hit.uy);
-  await sleep(240);
+  await sleep(260);
   await flyToSlot(target, nextSlot);
 
   updateSlotDom(nextSlot, target);
@@ -684,7 +685,9 @@ async function flyToSlot(piece, slotIndex) {
   piece.el = null;
 }
 
-function animateMiss(source, missDx, missDy, onDone) {\n  const frozenSrc = source?.src;\n  const frozenPose = source?.pose;
+function animateMiss(source, missDx, missDy, onDone) {
+  const frozenSrc = source?.src;
+  const frozenPose = source?.pose;
   const el = source?.el;
   if (!el) { onDone?.(); return; }
   const a = el.getBoundingClientRect(), sx = a.left, sy = a.top, sw = a.width, sh = a.height;
