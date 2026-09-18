@@ -50,15 +50,15 @@ const drag = {
 
 
 const DEFAULT_TUNING = {
-  chukoSize: 15.2,
-  khanSize: 16.7,
-  carpetSize: window.innerWidth <= 700 ? 88 : 84,
-  carpetTop: 45.5,
-  pileYOffset: 0,
-  pileHeight: 1.0,
-  scatterScale: 1.0,
+  chukoSize: 11.6,
+  khanSize: 15.2,
+  carpetSize: 82,
+  carpetTop: 46.6,
+  pileYOffset: -2.4,
+  pileHeight: 1.67,
+  scatterScale: 0.71,
 };
-const TUNING_STORAGE_KEY = 'upay-preview-tuning-0136';
+const TUNING_STORAGE_KEY = 'upay-preview-tuning-0141a';
 
 function loadTuning() {
   try {
