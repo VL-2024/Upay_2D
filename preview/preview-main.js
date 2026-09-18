@@ -31,6 +31,7 @@ const state = {
   lastObjective: '',
   guideFilter: null,
   suppressClickUntil: 0,
+  layoutRevision: 0,
 };
 
 const drag = {
@@ -466,6 +467,7 @@ function makeRandomScatter(count) {
 
 function renderPieces() {
   host.innerHTML = '';
+  const layoutRevision = ++state.layoutRevision;
   state.pieces.forEach((p, index) => {
     if (p.collected) return;
     const img = document.createElement('img');
@@ -486,7 +488,13 @@ function renderPieces() {
     animateScatterIn(p, index);
   });
   refreshPieceVisuals();
-  requestAnimationFrame(() => resolveAllPieceOverlaps());
+
+  // Longest scatter animation is below 1 second. Resolving overlaps only after
+  // it finishes avoids reading temporary transformed positions at the left edge.
+  setTimeout(() => {
+    if (layoutRevision !== state.layoutRevision) return;
+    resolveAllPieceOverlaps();
+  }, 1050);
 }
 
 function animateScatterIn(piece, index) {
@@ -1137,18 +1145,40 @@ function settlePieceNoOverlap(piece, options = {}) {
 }
 
 function resolveAllPieceOverlaps() {
-  const carpet = getCarpetGeometry(host.getBoundingClientRect());
-  // Khan stays fixed in the middle; ordinary chuko move around it.
-  for (let pass = 0; pass < 5; pass++) {
+  const br = host.getBoundingClientRect();
+  const carpet = getCarpetGeometry(br);
+  const khan = state.pieces.find(p => p.type === 'khan' && p.el && !p.collected);
+
+  // Reset ordinary pieces to their intended model coordinates first. That makes
+  // this pass independent of any entry/impact transforms still present in layout.
+  for (const piece of state.pieces) {
+    if (!piece?.el || piece.collected || piece.type === 'khan') continue;
+    piece.el.getAnimations().forEach(anim => {
+      try { if (anim.playState === 'finished') anim.cancel(); } catch {}
+    });
+    piece.el.style.left = `${piece.x}%`;
+    piece.el.style.top = `${piece.y}%`;
+    piece.el.style.transform = `translate(-50%,-50%) rotate(${piece.rotation}deg)`;
+  }
+
+  // Khan remains exactly where the game placed him.
+  if (khan?.el) {
+    khan.el.style.left = `${khan.x}%`;
+    khan.el.style.top = `${khan.y}%`;
+    khan.el.style.transform = `translate(-50%,-50%) rotate(${khan.rotation}deg)`;
+  }
+
+  // Resolve all final resting positions. Multiple light passes are preferable
+  // to one large jump and leave a small visible gap between neighbouring chuko.
+  for (let pass = 0; pass < 7; pass++) {
     let totalMove = 0;
     for (const piece of state.pieces) {
       if (!piece?.el || piece.collected || piece.type === 'khan') continue;
-      const br = host.getBoundingClientRect();
       const before = getPieceCenterPx(piece, br);
       const after = settlePieceNoOverlap(piece, { carpet, keepInside: true });
       if (before && after) totalMove += Math.hypot(after.x - before.x, after.y - before.y);
     }
-    if (totalMove < 1.5) break;
+    if (totalMove < 1.0) break;
   }
 }
 
@@ -1575,6 +1605,11 @@ function animateMiss(source, target, missDx, missDy, onDone) {
     el.style.zIndex = '';
     el.style.pointerEvents = '';
     try { anim.cancel(); } catch {}
+    settlePieceNoOverlap(source, {
+      carpet: getCarpetGeometry(host.getBoundingClientRect()),
+      keepInside: true,
+      ignoreIds: target?.id ? [target.id] : []
+    });
     onDone?.();
   });
 }
