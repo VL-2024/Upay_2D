@@ -7,10 +7,10 @@
 }
 
 .bg-layer{
-  background-image:url('../assets/ref/Fon_Upay1.webp?v=0132') !important;
-  background-repeat:no-repeat !important;
-  background-size:100% 100% !important;
-  background-position:center top !important;
+  background-image:url('../assets/ref/Fon_Upay1.webp?v=0132'),url('../assets/ref/upay_background_high_carpet.webp?v=0131') !important;
+  background-repeat:no-repeat,no-repeat !important;
+  background-size:100% 100%,108% auto !important;
+  background-position:center top,center -70px !important;
   z-index:0 !important;
 }
 
