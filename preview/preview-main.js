@@ -55,6 +55,7 @@ const DEFAULT_TUNING = {
   carpetSize: window.innerWidth <= 700 ? 88 : 84,
   carpetTop: 45.5,
   pileYOffset: 0,
+  pileHeight: 1.0,
   scatterScale: 1.0,
 };
 const TUNING_STORAGE_KEY = 'upay-preview-tuning-0136';
@@ -222,7 +223,7 @@ function buildTuningPanel() {
       <button type="button" class="tuning-close">×</button>
     </div>
     <label>Размер чуко <output data-out="chukoSize"></output>
-      <input data-key="chukoSize" type="range" min="11" max="20" step=".2">
+      <input data-key="chukoSize" type="range" min="8" max="24" step=".2">
     </label>
     <label>Размер Хана <output data-out="khanSize"></output>
       <input data-key="khanSize" type="range" min="13" max="22" step=".2">
@@ -236,11 +237,15 @@ function buildTuningPanel() {
     <label>Кучка выше / ниже <output data-out="pileYOffset"></output>
       <input data-key="pileYOffset" type="range" min="-7" max="8" step=".2">
     </label>
+    <label>Высота кучки <output data-out="pileHeight"></output>
+      <input data-key="pileHeight" type="range" min=".55" max="1.90" step=".02">
+    </label>
     <label>Разброс чуко <output data-out="scatterScale"></output>
-      <input data-key="scatterScale" type="range" min=".72" max="1.28" step=".02">
+      <input data-key="scatterScale" type="range" min=".45" max="1.80" step=".02">
     </label>
     <div class="tuning-actions">
       <button type="button" class="tuning-reroll">Новая раскладка</button>
+      <button type="button" class="tuning-copy">Копировать</button>
       <button type="button" class="tuning-reset">Сброс</button>
     </div>
   `;
@@ -255,13 +260,33 @@ function buildTuningPanel() {
       applyTuning();
     });
     input.addEventListener('change', () => {
-      if (['carpetSize','carpetTop','pileYOffset','scatterScale'].includes(key)) rerollPreviewLayout();
+      if (['chukoSize','khanSize','carpetSize','carpetTop','pileYOffset','pileHeight','scatterScale'].includes(key)) rerollPreviewLayout();
     });
   });
 
   button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
   panel.querySelector('.tuning-close').addEventListener('click', () => { panel.hidden = true; });
   panel.querySelector('.tuning-reroll').addEventListener('click', rerollPreviewLayout);
+  panel.querySelector('.tuning-copy').addEventListener('click', async () => {
+    const payload = JSON.stringify({
+      chukoSize: Number(tuning.chukoSize.toFixed(2)),
+      khanSize: Number(tuning.khanSize.toFixed(2)),
+      carpetSize: Number(tuning.carpetSize.toFixed(2)),
+      carpetTop: Number(tuning.carpetTop.toFixed(2)),
+      pileYOffset: Number(tuning.pileYOffset.toFixed(2)),
+      pileHeight: Number(tuning.pileHeight.toFixed(2)),
+      scatterScale: Number(tuning.scatterScale.toFixed(2))
+    });
+    const copyBtn = panel.querySelector('.tuning-copy');
+    try {
+      await navigator.clipboard.writeText(payload);
+      const old = copyBtn.textContent;
+      copyBtn.textContent = 'Скопировано';
+      setTimeout(() => { copyBtn.textContent = old; }, 1100);
+    } catch {
+      window.prompt('Скопируй параметры:', payload);
+    }
+  });
   panel.querySelector('.tuning-reset').addEventListener('click', () => {
     Object.assign(tuning, DEFAULT_TUNING);
     panel.querySelectorAll('input[data-key]').forEach(input => { input.value = tuning[input.dataset.key]; });
@@ -285,6 +310,7 @@ function applyTuning() {
     carpetSize: v => `${Number(v).toFixed(1)}%`,
     carpetTop: v => `${Number(v).toFixed(1)}%`,
     pileYOffset: v => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`,
+    pileHeight: v => `${Number(v).toFixed(2)}×`,
     scatterScale: v => `${Number(v).toFixed(2)}×`,
   };
   panel.querySelectorAll('output[data-out]').forEach(out => {
@@ -416,12 +442,16 @@ function makeRandomScatter(count) {
   const cy = carpet.cy + br.height * (tuning.pileYOffset / 100);
   const spread = tuning.scatterScale;
   const rx = carpet.radius * .70 * spread;
-  const ry = carpet.radius * .285 * spread;
+  const ry = carpet.radius * .285 * spread * tuning.pileHeight;
   const centerExclusion = Math.max(
     carpet.radius * .235,
-    br.width * ((tuning.chukoSize + tuning.khanSize) / 200) * .72
+    br.width * ((tuning.chukoSize + tuning.khanSize) / 200) * .95
   );
-  let minDist = Math.max(64, br.width * .086 * Math.min(1.08, spread));
+  let minDist = Math.max(
+    64,
+    br.width * (tuning.chukoSize / 100) * .76,
+    br.width * .086 * Math.min(1.16, spread)
+  );
 
   for (let i = 0; i < count; i++) {
     let best = null;
@@ -1051,7 +1081,7 @@ function getPieceCollisionRadius(piece) {
   const r = piece?.el?.getBoundingClientRect?.();
   if (!r) return 22;
   const base = Math.min(r.width, r.height);
-  return clamp(base * (piece.type === 'khan' ? .34 : .30), 17, 42);
+  return clamp(base * (piece.type === 'khan' ? .43 : .37), 19, 50);
 }
 
 function getPieceCenterPx(piece, br = host.getBoundingClientRect()) {
@@ -1083,7 +1113,7 @@ function resolvePointNoOverlap(piece, x, y, {
     obstacles.push({
       x: c.x,
       y: c.y,
-      radius: getPieceCollisionRadius(other) * (other.type === 'khan' ? 1.06 : 1)
+      radius: getPieceCollisionRadius(other) * (other.type === 'khan' ? 1.12 : 1)
     });
   }
   for (const p of reserved) obstacles.push(p);
@@ -1094,7 +1124,7 @@ function resolvePointNoOverlap(piece, x, y, {
       let dx = px - o.x;
       let dy = py - o.y;
       let d = Math.hypot(dx, dy);
-      const minDist = (radius + o.radius) * .94 + 2.5;
+      const minDist = (radius + o.radius) * .99 + 3.5;
       if (d >= minDist) continue;
 
       if (d < .001) {
@@ -1170,7 +1200,7 @@ function resolveAllPieceOverlaps() {
 
   // Resolve all final resting positions. Multiple light passes are preferable
   // to one large jump and leave a small visible gap between neighbouring chuko.
-  for (let pass = 0; pass < 7; pass++) {
+  for (let pass = 0; pass < 11; pass++) {
     let totalMove = 0;
     for (const piece of state.pieces) {
       if (!piece?.el || piece.collected || piece.type === 'khan') continue;
