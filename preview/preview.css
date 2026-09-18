@@ -1,5 +1,5 @@
 
-/* UPAY 2D v0.1.35 preview — isolated split-scene build */
+/* UPAY 2D v0.1.36 preview — isolated split-scene build */
 .bg-layer{
   background-image:url('../assets/ref/upay_background_ground.webp?v=0135') !important;
   background-position:center top !important;
@@ -9,8 +9,8 @@
 .carpet-layer{
   position:absolute;
   left:50%;
-  top:45.5%;
-  width:84%;
+  top:var(--carpet-top,45.5%);
+  width:var(--carpet-size,84%);
   aspect-ratio:1/1;
   transform:translate(-50%,-50%);
   background:url('../assets/ref/upay_carpet_blue.webp?v=0135') center/contain no-repeat;
@@ -38,7 +38,36 @@
     background-size:100% 100% !important;
   }
   .carpet-layer{
-    top:45.5%;
-    width:88%;
+    top:var(--carpet-top,45.5%);
+    width:var(--carpet-size,88%);
   }
+}
+
+.tuning-panel{
+  position:absolute;
+  right:18px;
+  top:250px;
+  z-index:30;
+  width:250px;
+  padding:12px 13px 13px;
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:17px;
+  color:#fff;
+  background:rgba(5,27,47,.94);
+  box-shadow:0 14px 30px rgba(0,0,0,.32);
+  backdrop-filter:blur(7px);
+  pointer-events:auto;
+}
+.tuning-panel[hidden]{display:none!important}
+.tuning-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;font-size:12px;letter-spacing:.04em}
+.tuning-close{width:25px;height:25px;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;cursor:pointer}
+.tuning-panel label{display:grid;grid-template-columns:1fr auto;gap:2px 8px;margin:8px 0;font-size:11px;font-weight:750}
+.tuning-panel output{color:#f3dba2;font-variant-numeric:tabular-nums}
+.tuning-panel input[type="range"]{grid-column:1/-1;width:100%;accent-color:#eac269}
+.tuning-actions{display:grid;grid-template-columns:1.5fr 1fr;gap:7px;margin-top:10px}
+.tuning-actions button{min-height:30px;border:1px solid rgba(255,255,255,.22);border-radius:9px;background:#123e61;color:#fff;font-size:10px;font-weight:850;cursor:pointer}
+.tuning-actions .tuning-reroll{background:linear-gradient(180deg,#f3dba2,#eac269);color:#143751}
+@media(max-width:700px){
+  .tuning-panel{right:8px;top:202px;width:225px;padding:10px 11px}
+  .tuning-panel label{margin:6px 0;font-size:10px}
 }

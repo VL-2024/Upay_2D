@@ -47,6 +47,32 @@ const drag = {
   baseTransform: '',
 };
 
+
+const DEFAULT_TUNING = {
+  chukoSize: 15.2,
+  khanSize: 16.7,
+  carpetSize: window.innerWidth <= 700 ? 88 : 84,
+  carpetTop: 45.5,
+  pileYOffset: 0,
+  scatterScale: 1.0,
+};
+const TUNING_STORAGE_KEY = 'upay-preview-tuning-0136';
+
+function loadTuning() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TUNING_STORAGE_KEY) || '{}');
+    return { ...DEFAULT_TUNING, ...saved };
+  } catch {
+    return { ...DEFAULT_TUNING };
+  }
+}
+
+const tuning = loadTuning();
+
+function saveTuning() {
+  try { localStorage.setItem(TUNING_STORAGE_KEY, JSON.stringify(tuning)); } catch {}
+}
+
 injectStyles();
 setupUI();
 startNewGame();
@@ -56,8 +82,8 @@ function injectStyles() {
   style.textContent = `
     #pixiHost{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
     .game-piece{position:absolute;transform:translate(-50%,-50%);transform-origin:center;object-fit:contain;pointer-events:auto;cursor:pointer;user-select:none;-webkit-user-drag:none;touch-action:none;filter:drop-shadow(0 6px 5px rgba(0,0,0,.24));transition:filter .14s ease,opacity .14s ease}
-    .game-piece.normal{width:14.7%}
-    .game-piece.khan{width:16.2%;z-index:25}
+    .game-piece.normal{width:var(--chuko-size,15.2%)}
+    .game-piece.khan{width:var(--khan-size,16.7%);z-index:25}
     .game-piece.selected{z-index:60!important;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 14px #63dfff) drop-shadow(0 7px 5px rgba(0,0,0,.28))!important}
     .game-piece.source-ready{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 9px rgba(77,214,255,.85)) drop-shadow(0 6px 5px rgba(0,0,0,.22))!important}
     .game-piece.valid-target{opacity:1!important;filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 14px #ffd96c) drop-shadow(0 6px 5px rgba(0,0,0,.22))!important}
@@ -89,7 +115,7 @@ function injectStyles() {
     .slot img{filter:drop-shadow(0 3px 2px rgba(0,0,0,.18))!important}
 
     @media(max-width:700px){
-      .game-piece.normal{width:15.2%}.game-piece.khan{width:16.7%}
+      .game-piece.normal{width:var(--chuko-size,15.2%)}.game-piece.khan{width:var(--khan-size,16.7%)}
       .pose-guide{left:52px;top:112px;width:118px;padding:7px}.pose-guide-open{left:52px;top:112px}.pose-guide-head{font-size:10px}.pose-guide-sub{font-size:8px}.pose-guide-btn{height:25px;font-size:9px}
       .pull-sector{width:235px;height:136px;transform-origin:0 68px}.pull-sector svg{width:235px;height:136px}
       .main-btn{font-size:22px!important}
@@ -103,6 +129,8 @@ function setupUI() {
   ensureSlots('zone2', 3);
   buildPoseGuide();
   buildPullGuide();
+  buildTuningPanel();
+  applyTuning();
   renderStakeMenu();
   syncStakeUI();
 
@@ -174,6 +202,110 @@ function buildPullGuide() {
   state.pullUI = { sector, elastic, handle, label };
 }
 
+
+function buildTuningPanel() {
+  const tools = document.querySelector('.side-tools');
+  const button = document.createElement('button');
+  button.className = 'tool tuning-open';
+  button.type = 'button';
+  button.setAttribute('aria-label', 'Настройки сцены');
+  button.textContent = '⚙';
+  tools?.appendChild(button);
+
+  const panel = document.createElement('section');
+  panel.className = 'tuning-panel';
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="tuning-head">
+      <b>НАСТРОЙКА СЦЕНЫ</b>
+      <button type="button" class="tuning-close">×</button>
+    </div>
+    <label>Размер чуко <output data-out="chukoSize"></output>
+      <input data-key="chukoSize" type="range" min="11" max="20" step=".2">
+    </label>
+    <label>Размер Хана <output data-out="khanSize"></output>
+      <input data-key="khanSize" type="range" min="13" max="22" step=".2">
+    </label>
+    <label>Размер ковра <output data-out="carpetSize"></output>
+      <input data-key="carpetSize" type="range" min="72" max="102" step=".5">
+    </label>
+    <label>Ковер выше / ниже <output data-out="carpetTop"></output>
+      <input data-key="carpetTop" type="range" min="38" max="54" step=".2">
+    </label>
+    <label>Кучка выше / ниже <output data-out="pileYOffset"></output>
+      <input data-key="pileYOffset" type="range" min="-7" max="8" step=".2">
+    </label>
+    <label>Разброс чуко <output data-out="scatterScale"></output>
+      <input data-key="scatterScale" type="range" min=".72" max="1.28" step=".02">
+    </label>
+    <div class="tuning-actions">
+      <button type="button" class="tuning-reroll">Новая раскладка</button>
+      <button type="button" class="tuning-reset">Сброс</button>
+    </div>
+  `;
+  shell.appendChild(panel);
+  state.tuningPanel = panel;
+
+  panel.querySelectorAll('input[data-key]').forEach(input => {
+    const key = input.dataset.key;
+    input.value = tuning[key];
+    input.addEventListener('input', () => {
+      tuning[key] = Number(input.value);
+      applyTuning();
+    });
+    input.addEventListener('change', () => {
+      if (['carpetSize','carpetTop','pileYOffset','scatterScale'].includes(key)) rerollPreviewLayout();
+    });
+  });
+
+  button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+  panel.querySelector('.tuning-close').addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelector('.tuning-reroll').addEventListener('click', rerollPreviewLayout);
+  panel.querySelector('.tuning-reset').addEventListener('click', () => {
+    Object.assign(tuning, DEFAULT_TUNING);
+    panel.querySelectorAll('input[data-key]').forEach(input => { input.value = tuning[input.dataset.key]; });
+    applyTuning();
+    rerollPreviewLayout();
+  });
+}
+
+function applyTuning() {
+  shell.style.setProperty('--chuko-size', `${tuning.chukoSize}%`);
+  shell.style.setProperty('--khan-size', `${tuning.khanSize}%`);
+  shell.style.setProperty('--carpet-size', `${tuning.carpetSize}%`);
+  shell.style.setProperty('--carpet-top', `${tuning.carpetTop}%`);
+  saveTuning();
+
+  const panel = state.tuningPanel;
+  if (!panel) return;
+  const formats = {
+    chukoSize: v => `${Number(v).toFixed(1)}%`,
+    khanSize: v => `${Number(v).toFixed(1)}%`,
+    carpetSize: v => `${Number(v).toFixed(1)}%`,
+    carpetTop: v => `${Number(v).toFixed(1)}%`,
+    pileYOffset: v => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`,
+    scatterScale: v => `${Number(v).toFixed(2)}×`,
+  };
+  panel.querySelectorAll('output[data-out]').forEach(out => {
+    const key = out.dataset.out;
+    out.textContent = formats[key](tuning[key]);
+  });
+}
+
+function rerollPreviewLayout() {
+  if (state.phase === 'animating') return;
+  if (state.slots.some(Boolean)) {
+    flashObjective('Положение применится полностью с новой игрой');
+    return;
+  }
+  state.selectedSourceId = null;
+  state.phase = 'idle';
+  buildPieces();
+  renderPieces();
+  setObjectiveFromScenario();
+  refreshPieceVisuals();
+}
+
 function selectorInteractive() { return state.phase === 'idle' || state.phase === 'settled'; }
 function selectDenomination(n) { if (!selectorInteractive() || !state.denominations.includes(n)) return; state.denomination = n; syncStakeUI(); closeStakeMenu(); }
 function renderStakeMenu() { document.getElementById('stakeMenu').innerHTML = state.denominations.map(v => `<button type="button" class="stake-option${v === state.denomination ? ' selected' : ''}" data-value="${v}">${v} ${state.currency}</button>`).join(''); }
@@ -243,12 +375,15 @@ function buildPieces() {
       el: null,
     });
   });
+  const br = host.getBoundingClientRect();
+  const carpet = getCarpetGeometry(br);
+  const pileCenterY = carpet.cy + br.height * (tuning.pileYOffset / 100);
   state.pieces.push({
     id: 'KHAN',
     type: 'khan',
     src: khanFiles[Math.floor(Math.random() * khanFiles.length)],
-    x: 47 + Math.random() * 6,
-    y: 43 + Math.random() * 4,
+    x: (carpet.cx / br.width) * 100,
+    y: (pileCenterY / br.height) * 100,
     rotation: -8 + Math.random() * 16,
     spawnDx: -70,
     spawnDy: 25,
@@ -271,42 +406,60 @@ function getCarpetGeometry(referenceRect = host.getBoundingClientRect()) {
   return { cx, cy, rx: radius, ry: radius, radius };
 }
 
+
 function makeRandomScatter(count) {
   const out = [];
   const br = host.getBoundingClientRect();
   const carpet = getCarpetGeometry(br);
   const cx = carpet.cx;
-  const cy = carpet.cy - carpet.radius * .015;
-  const rx = carpet.radius * .70;
-  const ry = carpet.radius * .285;
-  let minDist = Math.max(70, br.width * .092);
+  const cy = carpet.cy + br.height * (tuning.pileYOffset / 100);
+  const spread = tuning.scatterScale;
+  const rx = carpet.radius * .70 * spread;
+  const ry = carpet.radius * .285 * spread;
+  const centerExclusion = Math.max(
+    carpet.radius * .235,
+    br.width * ((tuning.chukoSize + tuning.khanSize) / 200) * .72
+  );
+  let minDist = Math.max(64, br.width * .086 * Math.min(1.08, spread));
 
   for (let i = 0; i < count; i++) {
     let best = null;
-    for (let attempt = 0; attempt < 360; attempt++) {
+    for (let attempt = 0; attempt < 460; attempt++) {
       const a = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(.08 + Math.random() * .92);
+      const r = Math.sqrt(.10 + Math.random() * .90);
       const px = cx + Math.cos(a) * rx * r + (Math.random() - .5) * br.width * .018;
       const py = cy + Math.sin(a) * ry * r + (Math.random() - .5) * br.height * .006;
+
       const carpetNorm = Math.hypot((px - carpet.cx) / carpet.radius, (py - carpet.cy) / carpet.radius);
-      if (carpetNorm > .74) continue;
+      if (carpetNorm > .76) continue;
+
+      // The Khan owns the centre. No chuko may overlap or sit on top of him.
+      const centreDistance = Math.hypot(px - cx, (py - cy) * 1.34);
+      if (centreDistance < centerExclusion) continue;
 
       const score = out.length
-        ? Math.min(...out.map(q => Math.hypot(px - q.px, (py - q.py) * 1.45)))
+        ? Math.min(...out.map(q => Math.hypot(px - q.px, (py - q.py) * 1.42)))
         : 999;
 
       if (!best || score > best.score) best = { px, py, score };
       if (score >= minDist) break;
     }
 
-    const chosen = best || { px: cx, py: cy, score: 0 };
+    const fallbackAngle = (Math.PI * 2 * i / count) + Math.random() * .22;
+    const fallbackRadius = centerExclusion * 1.18 + (i % 3) * 18;
+    const chosen = best || {
+      px: cx + Math.cos(fallbackAngle) * fallbackRadius,
+      py: cy + Math.sin(fallbackAngle) * fallbackRadius * .44,
+      score: 0
+    };
+
     out.push({
       px: chosen.px,
       py: chosen.py,
       x: (chosen.px / br.width) * 100,
       y: (chosen.py / br.height) * 100
     });
-    if (i > 8) minDist *= .985;
+    if (i > 8) minDist *= .982;
   }
   return shuffled(out.map(({x,y}) => ({x,y})));
 }
@@ -424,7 +577,7 @@ function onPointerUp(e) {
   if (!moved || power < 24) { flashObjective('Оттяни чуко назад сильнее и отпусти'); return; }
   const snap = scenario.snapshot();
   if (snap.failedStrikeRequired) {
-    animateMiss(source, missDx, missDy, () => {
+    animateMiss(source, candidate, missDx, missDy, () => {
       scenario.registerFailedStrike(); state.phase = 'settled'; state.selectedSourceId = null; setObjective(scenario.resultText()); syncSelectorLock(); refreshPieceVisuals(); updateActionButton();
     });
     return;
@@ -986,21 +1139,108 @@ async function flyToSlot(piece, slotIndex) {
   piece.el = null;
 }
 
-function animateMiss(source, missDx, missDy, onDone) {
-  const frozenSrc = source?.src;
-  const frozenPose = source?.pose;
+
+function animateMiss(source, target, missDx, missDy, onDone) {
   const el = source?.el;
   if (!el) { onDone?.(); return; }
-  const a = el.getBoundingClientRect(), sx = a.left, sy = a.top, sw = a.width, sh = a.height;
-  const dx = -missDx || 70, dy = -missDy || -20, d = Math.max(1, Math.hypot(dx, dy)), ux = dx / d, uy = dy / d;
-  const clone = el.cloneNode(true);
-  Object.assign(clone.style, { position: 'fixed', left: `${sx}px`, top: `${sy}px`, width: `${sw}px`, height: `${sh}px`, margin: '0', transform: 'none', zIndex: '10080', pointerEvents: 'none' });
-  document.body.appendChild(clone); el.style.visibility = 'hidden';
-  clone.animate([
-    { left: `${sx}px`, top: `${sy}px`, opacity: 1, transform: 'rotate(0deg)' },
-    { left: `${sx + ux * 120}px`, top: `${sy + uy * 120 - 10}px`, opacity: .96, transform: 'rotate(150deg)' },
-    { left: `${sx + ux * 165}px`, top: `${sy + uy * 165}px`, opacity: 0, transform: 'rotate(260deg)' },
-  ], { duration: 760, easing: 'cubic-bezier(.18,.7,.2,1)', fill: 'forwards' }).onfinish = () => { clone.remove(); if (frozenSrc && el) el.src = frozenSrc; if (frozenPose && el) el.dataset.pose = frozenPose; el.style.visibility = ''; onDone?.(); };
+
+  const hostRect = host.getBoundingClientRect();
+  const sr = el.getBoundingClientRect();
+  const sx = sr.left + sr.width / 2 - hostRect.left;
+  const sy = sr.top + sr.height / 2 - hostRect.top;
+  const sourceRot = source.rotation;
+
+  let ux = -missDx;
+  let uy = -missDy;
+  let targetX = sx + ux;
+  let targetY = sy + uy;
+
+  if (target?.el) {
+    const tr = target.el.getBoundingClientRect();
+    const tx = tr.left + tr.width / 2 - hostRect.left;
+    const ty = tr.top + tr.height / 2 - hostRect.top;
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const d = Math.max(1, Math.hypot(dx, dy));
+    ux = dx / d;
+    uy = dy / d;
+
+    const sideX = -uy;
+    const sideY = ux;
+    const sideSign = Math.random() < .5 ? -1 : 1;
+    const sideOffset = clamp((sr.width + tr.width) * .22, 24, 44) * sideSign;
+    const shortOfTarget = clamp((sr.width + tr.width) * .18, 18, 34);
+
+    // A deliberate near miss: it reaches the target area, passes just beside it,
+    // then drops and stays there instead of disappearing.
+    targetX = tx - ux * shortOfTarget + sideX * sideOffset;
+    targetY = ty - uy * shortOfTarget + sideY * sideOffset;
+  } else {
+    const d = Math.max(1, Math.hypot(ux, uy));
+    ux /= d; uy /= d;
+    const travel = clamp(d * .90, 80, 135);
+    targetX = sx + ux * travel;
+    targetY = sy + uy * travel;
+  }
+
+  const halfW = sr.width * .52;
+  const halfH = sr.height * .52;
+  targetX = clamp(targetX, halfW + 8, hostRect.width - halfW - 8);
+  targetY = clamp(targetY, halfH + 8, hostRect.height - halfH - 8);
+
+  const landingRot = normalizeDeg(sourceRot + (ux >= 0 ? 55 : -55) + (Math.random() - .5) * 24);
+  el.style.pointerEvents = 'none';
+  el.style.zIndex = '90';
+
+  const anim = el.animate([
+    {
+      offset: 0,
+      left: `${sx}px`,
+      top: `${sy}px`,
+      opacity: 1,
+      transform: `translate(-50%,-50%) rotate(${sourceRot}deg) scale(1)`
+    },
+    {
+      offset: .58,
+      left: `${sx + (targetX - sx) * .62}px`,
+      top: `${sy + (targetY - sy) * .62 - 14}px`,
+      opacity: 1,
+      transform: `translate(-50%,-50%) rotate(${sourceRot + (landingRot - sourceRot) * .55}deg) scale(1.015)`
+    },
+    {
+      offset: .92,
+      left: `${targetX}px`,
+      top: `${targetY - 3}px`,
+      opacity: 1,
+      transform: `translate(-50%,-50%) rotate(${landingRot}deg) scale(.99)`
+    },
+    {
+      offset: 1,
+      left: `${targetX}px`,
+      top: `${targetY}px`,
+      opacity: 1,
+      transform: `translate(-50%,-50%) rotate(${landingRot}deg) scale(1)`
+    }
+  ], {
+    duration: 620,
+    easing: 'cubic-bezier(.18,.68,.20,1)',
+    fill: 'forwards'
+  });
+
+  anim.finished.catch(() => {}).then(() => {
+    source.x = (targetX / hostRect.width) * 100;
+    source.y = (targetY / hostRect.height) * 100;
+    source.rotation = landingRot;
+    el.style.left = `${source.x}%`;
+    el.style.top = `${source.y}%`;
+    el.style.transform = `translate(-50%,-50%) rotate(${landingRot}deg)`;
+    el.style.opacity = '1';
+    el.style.visibility = '';
+    el.style.zIndex = '';
+    el.style.pointerEvents = '';
+    try { anim.cancel(); } catch {}
+    onDone?.();
+  });
 }
 
 function kickKhan(el, ux, uy) {
@@ -1069,4 +1309,13 @@ window.UPAY2D = {
   setScenario(code) { if (!Object.values(SCENARIOS).includes(code)) return false; state.externalScenarioCode = code; startNewGame(); return true; },
   clearScenarioOverride() { state.externalScenarioCode = null; },
   getScenario() { return scenario.snapshot(); },
+  getTuning() { return { ...tuning }; },
+  setTuning(partial = {}) {
+    Object.keys(DEFAULT_TUNING).forEach(key => {
+      if (Number.isFinite(Number(partial[key]))) tuning[key] = Number(partial[key]);
+    });
+    applyTuning();
+    rerollPreviewLayout();
+    return { ...tuning };
+  },
 };
