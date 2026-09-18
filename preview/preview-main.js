@@ -486,6 +486,7 @@ function renderPieces() {
     animateScatterIn(p, index);
   });
   refreshPieceVisuals();
+  requestAnimationFrame(() => resolveAllPieceOverlaps());
 }
 
 function animateScatterIn(piece, index) {
@@ -941,6 +942,7 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
             `translate(-50%,-50%) rotate(${target.rotation}deg)`;
           targetEl.style.zIndex = '';
           targetEl.style.pointerEvents = '';
+          if (!eject) settlePieceNoOverlap(target, { carpet, keepInside: true });
           resolve();
         }
       }
@@ -1023,6 +1025,7 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
     `translate(-50%,-50%) rotate(${source.rotation}deg)`;
   sourceEl.style.zIndex = '';
   sourceEl.style.pointerEvents = '';
+  settlePieceNoOverlap(source, { carpet, keepInside: true });
 
   return {
     ux: dirX,
@@ -1035,9 +1038,124 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   };
 }
 
+
+function getPieceCollisionRadius(piece) {
+  const r = piece?.el?.getBoundingClientRect?.();
+  if (!r) return 22;
+  const base = Math.min(r.width, r.height);
+  return clamp(base * (piece.type === 'khan' ? .34 : .30), 17, 42);
+}
+
+function getPieceCenterPx(piece, br = host.getBoundingClientRect()) {
+  const r = piece?.el?.getBoundingClientRect?.();
+  if (!r) return null;
+  return {
+    x: r.left + r.width / 2 - br.left,
+    y: r.top + r.height / 2 - br.top
+  };
+}
+
+function resolvePointNoOverlap(piece, x, y, {
+  carpet = getCarpetGeometry(host.getBoundingClientRect()),
+  keepInside = true,
+  ignoreIds = [],
+  reserved = []
+} = {}) {
+  const br = host.getBoundingClientRect();
+  const radius = getPieceCollisionRadius(piece);
+  const ignore = new Set(ignoreIds);
+  let px = x;
+  let py = y;
+
+  const obstacles = [];
+  for (const other of state.pieces) {
+    if (!other?.el || other.collected || other.id === piece.id || ignore.has(other.id)) continue;
+    const c = getPieceCenterPx(other, br);
+    if (!c) continue;
+    obstacles.push({
+      x: c.x,
+      y: c.y,
+      radius: getPieceCollisionRadius(other) * (other.type === 'khan' ? 1.06 : 1)
+    });
+  }
+  for (const p of reserved) obstacles.push(p);
+
+  for (let pass = 0; pass < 9; pass++) {
+    let changed = false;
+    for (const o of obstacles) {
+      let dx = px - o.x;
+      let dy = py - o.y;
+      let d = Math.hypot(dx, dy);
+      const minDist = (radius + o.radius) * .94 + 2.5;
+      if (d >= minDist) continue;
+
+      if (d < .001) {
+        const a = (piece.id.charCodeAt(piece.id.length - 1) || 1) * 1.618 + pass;
+        dx = Math.cos(a);
+        dy = Math.sin(a);
+        d = 1;
+      }
+      const push = minDist - d + .6;
+      px += (dx / d) * push;
+      py += (dy / d) * push;
+      changed = true;
+    }
+
+    if (keepInside && carpet?.radius) {
+      const maxR = Math.max(20, carpet.radius - radius * .72);
+      const dx = px - carpet.cx;
+      const dy = py - carpet.cy;
+      const d = Math.hypot(dx, dy);
+      if (d > maxR) {
+        const k = maxR / Math.max(1, d);
+        px = carpet.cx + dx * k;
+        py = carpet.cy + dy * k;
+        changed = true;
+      }
+    }
+
+    px = clamp(px, radius + 6, br.width - radius - 6);
+    py = clamp(py, radius + 6, br.height - radius - 6);
+    if (!changed) break;
+  }
+
+  return { x: px, y: py, radius };
+}
+
+function settlePieceNoOverlap(piece, options = {}) {
+  if (!piece?.el || piece.collected) return null;
+  const br = host.getBoundingClientRect();
+  const c = getPieceCenterPx(piece, br);
+  if (!c) return null;
+  const resolved = resolvePointNoOverlap(piece, c.x, c.y, options);
+
+  piece.x = (resolved.x / br.width) * 100;
+  piece.y = (resolved.y / br.height) * 100;
+  piece.el.style.left = `${piece.x}%`;
+  piece.el.style.top = `${piece.y}%`;
+  return resolved;
+}
+
+function resolveAllPieceOverlaps() {
+  const carpet = getCarpetGeometry(host.getBoundingClientRect());
+  // Khan stays fixed in the middle; ordinary chuko move around it.
+  for (let pass = 0; pass < 5; pass++) {
+    let totalMove = 0;
+    for (const piece of state.pieces) {
+      if (!piece?.el || piece.collected || piece.type === 'khan') continue;
+      const br = host.getBoundingClientRect();
+      const before = getPieceCenterPx(piece, br);
+      const after = settlePieceNoOverlap(piece, { carpet, keepInside: true });
+      if (before && after) totalMove += Math.hypot(after.x - before.x, after.y - before.y);
+    }
+    if (totalMove < 1.5) break;
+  }
+}
+
+
 function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX, dirY, carpet) {
   const travel = Math.hypot(endX - startX, endY - startY);
-  const corridorLength = Math.min(travel * .50, 105);
+  const corridorLength = Math.min(travel * .52, 112);
   const pathEndX = startX + dirX * corridorLength;
   const pathEndY = startY + dirY * corridorLength;
   const pathDx = pathEndX - startX;
@@ -1045,6 +1163,7 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
   const pathLen2 = Math.max(1, pathDx * pathDx + pathDy * pathDy);
 
   const candidates = [];
+  const reserved = [];
 
   for (const p of state.pieces) {
     if (
@@ -1065,11 +1184,9 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
     const closestX = startX + pathDx * u;
     const closestY = startY + pathDy * u;
     const d = Math.hypot(cx - closestX, cy - closestY);
-    const hitRadius = Math.max(24, (r.width + target.el.getBoundingClientRect().width) * .30);
+    const hitRadius = Math.max(26, (r.width + target.el.getBoundingClientRect().width) * .31);
 
-    if (d <= hitRadius) {
-      candidates.push({ p, r, cx, cy, d, u });
-    }
+    if (d <= hitRadius) candidates.push({ p, r, cx, cy, d, u });
   }
 
   candidates
@@ -1077,45 +1194,47 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
     .slice(0, 3)
     .forEach(({ p, r, cx, cy, d }) => {
       const el = p.el;
-      const outwardX = d > .1 ? (cx - startX) / Math.hypot(cx - startX, cy - startY) : -dirY;
-      const outwardY = d > .1 ? (cy - startY) / Math.hypot(cx - startX, cy - startY) : dirX;
-      const strength = clamp((1 - d / Math.max(28, r.width * .75)) * 12 + 5, 4, 13);
-      let moveX = dirX * strength * .58 + outwardX * strength * .36;
-      let moveY = dirY * strength * .46 + outwardY * strength * .28;
+      const radialLen = Math.max(.001, Math.hypot(cx - startX, cy - startY));
+      const outwardX = (cx - startX) / radialLen;
+      const outwardY = (cy - startY) / radialLen;
+      const strength = clamp((1 - d / Math.max(30, r.width * .78)) * 15 + 6, 5, 17);
 
+      let moveX = dirX * strength * .62 + outwardX * strength * .42;
+      let moveY = dirY * strength * .48 + outwardY * strength * .32;
       let destX = cx + moveX;
       let destY = cy + moveY;
 
-      // Neighbor reactions must never accidentally eject another chuko.
-      const nx = (destX - carpet.cx) / carpet.rx;
-      const ny = (destY - carpet.cy) / carpet.ry;
-      const norm = Math.hypot(nx, ny);
-      if (norm > .84) {
-        const k = .84 / norm;
-        destX = carpet.cx + (destX - carpet.cx) * k;
-        destY = carpet.cy + (destY - carpet.cy) * k;
-      }
-
+      const resolved = resolvePointNoOverlap(p, destX, destY, {
+        carpet,
+        keepInside: true,
+        reserved
+      });
+      destX = resolved.x;
+      destY = resolved.y;
       moveX = destX - cx;
       moveY = destY - cy;
+      reserved.push({ x: destX, y: destY, radius: resolved.radius });
+
       const startRot = p.rotation;
-      const turn = (Math.random() - .5) * 20 + (dirX >= 0 ? 5 : -5);
-      const endRot = normalizeDeg(startRot + turn);
-      const baseTransform = `translate(-50%,-50%) rotate(${startRot}deg)`;
+      const cross = dirX * outwardY - dirY * outwardX;
+      const turnSign = Math.sign(cross || (Math.random() - .5)) || 1;
+      const turnMagnitude = 38 + strength * 2.15 + Math.random() * 18;
+      const peakRot = normalizeDeg(startRot + turnSign * turnMagnitude * 1.12);
+      const endRot = normalizeDeg(startRot + turnSign * turnMagnitude * .76);
 
       el.style.zIndex = '38';
       const anim = el.animate([
         {
           offset: 0,
-          transform: baseTransform,
+          transform: `translate(-50%,-50%) rotate(${startRot}deg) scale(1)`,
           left: `${cx}px`,
           top: `${cy}px`
         },
         {
-          offset: .46,
-          transform: `translate(-50%,-50%) rotate(${startRot + turn * .65}deg) scale(1.012)`,
-          left: `${cx + moveX * .72}px`,
-          top: `${cy + moveY * .72 - Math.max(2, strength * .20)}px`
+          offset: .44,
+          transform: `translate(-50%,-50%) rotate(${peakRot}deg) scale(1.018)`,
+          left: `${cx + moveX * .74}px`,
+          top: `${cy + moveY * .74 - Math.max(3, strength * .22)}px`
         },
         {
           offset: 1,
@@ -1124,7 +1243,7 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
           top: `${destY}px`
         }
       ], {
-        duration: 260 + Math.random() * 80,
+        duration: 285 + Math.random() * 90,
         easing: 'cubic-bezier(.18,.72,.22,1)',
         fill: 'forwards'
       });
@@ -1139,6 +1258,7 @@ function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX,
         el.style.transform = `translate(-50%,-50%) rotate(${endRot}deg)`;
         el.style.zIndex = '';
         try { anim.cancel(); } catch {}
+        settlePieceNoOverlap(p, { carpet, keepInside: true });
       });
     });
 }
