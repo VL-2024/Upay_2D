@@ -1,5 +1,5 @@
-import { CONFIG } from '../src/config.js';
-import { ScenarioEngine, SCENARIOS } from '../src/scenario-engine.js';
+import { CONFIG } from './config.js';
+import { ScenarioEngine, SCENARIOS } from './scenario-engine.js';
 
 const host = document.getElementById('pixiHost');
 const shell = document.getElementById('appShell');

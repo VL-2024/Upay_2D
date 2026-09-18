@@ -1,17 +1,19 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
+<meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="format-detection" content="telephone=no" />
-  <title>UPAY 2D v0.1.31-alpha</title>
+  <title>UPAY 2D v0.1.41</title>
   <link rel="stylesheet" href="./src/styles.css?v=0131" />
   <link rel="stylesheet" href="./src/overrides-013d.css?v=0131" />
+  <link rel="stylesheet" href="./src/scene-0141.css?v=0141-main2" />
 </head>
 <body>
   <div id="appShell" class="shell">
-    <div class="bg-layer"></div>
+    <div id="backgroundLayer" class="bg-layer"></div>
+    <div id="carpetLayer" class="carpet-layer" aria-hidden="true"></div>
     <div id="pixiHost" class="pixi-host"></div>
 
     <header class="topbar">
@@ -73,8 +75,8 @@
     </section>
 
     <footer class="footer">БОЛЬШЕ, ЧЕМ ЛОТЕРЕЯ <b>X2</b> НАШИ ИГРЫ. НАША КУЛЬТУРА.</footer>
-  </div>
+</div>
 
-  <script type="module" src="./src/dom-main-0131.js?v=0131"></script>
+  <script type="module" src="./src/main.js?v=0141-main2"></script>
 </body>
 </html>
