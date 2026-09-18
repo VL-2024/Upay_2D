@@ -1,0 +1,36 @@
+/* UPAY 2D v0.1.32-alpha — separate scene layers */
+.shell{
+  --scene-carpet-x:50%;
+  --scene-carpet-y:40.7%;
+  --scene-carpet-w:89.3%;
+  --scene-carpet-h:31.1%;
+}
+
+.bg-layer{
+  background-image:url('../assets/ref/upay_background_ground.webp?v=0132') !important;
+  background-repeat:no-repeat !important;
+  background-size:100% 100% !important;
+  background-position:center top !important;
+  z-index:0 !important;
+}
+
+.carpet-layer{
+  position:absolute;
+  left:var(--scene-carpet-x);
+  top:var(--scene-carpet-y);
+  width:var(--scene-carpet-w);
+  height:var(--scene-carpet-h);
+  transform:translate(-50%,-50%);
+  background-image:url('../assets/ref/upay_carpet_blue.webp?v=0132');
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:100% 100%;
+  pointer-events:none;
+  z-index:1;
+  filter:drop-shadow(0 9px 12px rgba(0,0,0,.10));
+}
+
+/* Pieces always render above the independent carpet layer. */
+#pixiHost{z-index:2!important}
+
+/* Keep the existing stable lower HUD anchoring from overrides-013d.css. */
