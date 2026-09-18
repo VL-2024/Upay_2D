@@ -1,5 +1,5 @@
 export const CONFIG = {
-  version: '0.1.44-matter-air',
+  version: '0.1.45-matter-air',
   currency: 'сом',
   denominations: [25, 50, 100],
   defaultDenomination: 50,

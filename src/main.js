@@ -1062,7 +1062,7 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
     PHYSICS_CAT.STRIKER;
 
   sourceBody.frictionAir = .026;
-  targetBody.frictionAir = eject ? .016 : (isKhan ? .045 : .058);
+  targetBody.frictionAir = eject ? .010 : (isKhan ? .045 : .058);
 
   M.Body.setVelocity(sourceBody, { x: 0, y: 0 });
   M.Body.setAngularVelocity(sourceBody, 0);
@@ -1121,8 +1121,26 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
       const br = host.getBoundingClientRect();
       createImpactBurst(br.left + impactPoint.x, br.top + impactPoint.y);
 
-      // Extra rotational impulse at the contact point. Translation and all
-      // secondary collisions remain entirely inside Matter.js.
+      // Immediate physical response: the target gets an impulse on this exact
+      // Matter collision frame instead of waiting for residual contact forces
+      // to separate dense clusters.
+      M.Sleeping.set(targetBody, false);
+
+      const targetKick = eject
+        ? clamp(5.8 + power * .030, 6.4, 8.8)
+        : clamp(1.8 + power * .010, 2.1, 3.1);
+
+      M.Body.setVelocity(targetBody, {
+        x: targetBody.velocity.x + ux * targetKick,
+        y: targetBody.velocity.y + uy * targetKick
+      });
+
+      M.Body.setAngularVelocity(
+        targetBody,
+        targetBody.angularVelocity + spinSign * (eject ? .14 : .075)
+      );
+
+      // Striker rebound/spin is also resolved by Matter from this point.
       M.Body.setAngularVelocity(
         sourceBody,
         sourceBody.angularVelocity + spinSign * .22
@@ -1163,15 +1181,15 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
         // In a dense cluster a real collision can spend too much energy on
         // neighbours. Add one small physical impulse so a winning piece still
         // completes the prescribed lottery outcome.
-        if (!assisted && elapsed > 950 && matterCarpetNorm(targetBody.position) < .98) {
+        if (!assisted && elapsed > 260 && matterCarpetNorm(targetBody.position) < .97) {
           assisted = true;
           M.Body.setVelocity(targetBody, {
-            x: targetBody.velocity.x + ux * 4.2,
-            y: targetBody.velocity.y + uy * 4.2
+            x: targetBody.velocity.x + ux * 3.0,
+            y: targetBody.velocity.y + uy * 3.0
           });
           M.Body.setAngularVelocity(
             targetBody,
-            targetBody.angularVelocity + spinSign * .12
+            targetBody.angularVelocity + spinSign * .08
           );
         }
       }
