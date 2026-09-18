@@ -4,8 +4,8 @@ export const CONFIG = {
   denominations: [25, 50, 100],
   defaultDenomination: 50,
   scene: {
-    backgroundImage: './assets/ref/upay_background_ground.webp',
-    carpetImage: './assets/ref/upay_carpet_blue.webp',
+    backgroundImage: './assets/ref/Fon_Upay1.webp',
+    carpetImage: './assets/ref/Carpet_Blue.webp',
 
     // Visual placement. All values are relative to the game shell.
     carpetCenterX: 0.50,
