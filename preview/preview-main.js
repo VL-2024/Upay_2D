@@ -728,6 +728,7 @@ async function strikeFailedTarget(source, target) {
 }
 
 
+
 async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   const sourceEl = source?.el;
   const targetEl = target?.el;
@@ -750,9 +751,8 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   const ux = dx / dist;
   const uy = dy / dist;
 
-  // Visual contact point: large transparent margins in the WebP assets mean
-  // the geometric centres must come closer than the DOM rectangles suggest.
-  const contactGap = Math.max(17, (sr.width + tr.width) * .175);
+  // Visual contact point. Transparent margins in the WebP assets are ignored.
+  const contactGap = Math.max(15, (sr.width + tr.width) * .155);
   const impactX = tx - ux * contactGap;
   const impactY = ty - uy * contactGap;
 
@@ -762,23 +762,25 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   const impactTop = impactY - hostRect.top;
 
   const baseRot = source.rotation;
-  const impactRot = normalizeDeg(baseRot + (ux >= 0 ? 22 : -22));
+  const spinSign = ux >= 0 ? 1 : -1;
+  const impactRot = normalizeDeg(baseRot + spinSign * 30);
 
-  // Small striker rebound after the collision. It never returns to its old
-  // position; it settles just behind the contact point.
-  const rebound = clamp(sr.width * .12, 7, 13);
-  const reboundSide = (Math.random() - .5) * clamp(sr.width * .045, 2, 5);
+  // Striker rebound: a small hop, visible spin and a short backwards bounce.
+  const rebound = clamp(sr.width * .16, 10, 18);
+  const reboundSide = (Math.random() - .5) * clamp(sr.width * .07, 3, 7);
   const reboundLeft = impactLeft - ux * rebound + (-uy) * reboundSide;
   const reboundTop = impactTop - uy * rebound + ux * reboundSide;
-  const reboundRot = normalizeDeg(impactRot - (ux >= 0 ? 8 : -8));
+  const reboundHop = clamp(sr.height * .12, 7, 13);
+  const reboundRot = normalizeDeg(impactRot + spinSign * (72 + Math.random() * 34));
+  const settleLeft = reboundLeft + ux * clamp(sr.width * .035, 2, 5);
+  const settleTop = reboundTop + uy * clamp(sr.height * .025, 1, 4);
+  const settleRot = normalizeDeg(reboundRot - spinSign * (12 + Math.random() * 8));
 
   const targetLocalX = tx - hostRect.left;
   const targetLocalY = ty - hostRect.top;
   const carpet = getCarpetGeometry(hostRect);
 
-  // Direction is dominated by the strike vector; only a tiny tangential
-  // component keeps repeated hits from looking mechanical.
-  const tangentAmount = (Math.random() * .16) - .08;
+  const tangentAmount = (Math.random() * .12) - .06;
   let dirX = ux + (-uy) * tangentAmount;
   let dirY = uy + ux * tangentAmount;
   const dirLen = Math.hypot(dirX, dirY) || 1;
@@ -794,11 +796,9 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   let edgeDistance = (-B + Math.sqrt(disc)) / (2 * A);
   if (!Number.isFinite(edgeDistance) || edgeDistance < 18) edgeDistance = Math.min(hostRect.width * .22, 125);
 
-  let endX, endY, c1x, c1y, c2x, c2y, duration, targetSpin, hopHeight;
+  let endX, endY, c1x, c1y, c2x, c2y, targetDuration, targetSpin, hopHeight;
 
   if (eject) {
-    // Winning hit: immediately travel through the strike line and finish a
-    // little beyond the visible carpet rim.
     const exitExtra = clamp(hostRect.width * .050, 20, 32);
     endX = targetLocalX + dirX * (edgeDistance + exitExtra);
     endY = targetLocalY + dirY * (edgeDistance + exitExtra);
@@ -818,26 +818,23 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
       endY = clamp(endY, halfH + 9, hostRect.height - halfH - 9);
     }
 
-    const push = clamp(tr.width * .46, 30, 46);
+    const push = clamp(tr.width * .52, 34, 52);
     c1x = targetLocalX + dirX * push;
     c1y = targetLocalY + dirY * push;
-    c2x = endX - dirX * clamp(tr.width * .42, 30, 48);
-    c2y = endY - dirY * clamp(tr.width * .42, 30, 48);
-    duration = 700 + Math.random() * 150;
-    targetSpin = ((Math.random() * 2.25) - 1.125) * Math.PI;
-    hopHeight = clamp(tr.height * .10, 6, 13);
+    c2x = endX - dirX * clamp(tr.width * .38, 28, 44);
+    c2y = endY - dirY * clamp(tr.width * .38, 28, 44);
+    targetDuration = 690 + Math.random() * 120;
+    targetSpin = ((Math.random() * 2.2) - 1.1) * Math.PI;
+    hopHeight = clamp(tr.height * .11, 7, 14);
   } else {
-    // Non-winning contact has two natural-looking outcomes:
-    // 1) a short hop almost in place;
-    // 2) a slide toward the rim that stops safely inside the carpet.
     const moveTowardEdge = Math.random() < .58;
     if (moveTowardEdge) {
       const safeTravel = Math.max(20, edgeDistance - clamp(tr.width * .72, 38, 62));
-      const travel = clamp(safeTravel * (.58 + Math.random() * .20), 28, Math.min(115, safeTravel));
+      const maxTravel = Math.max(28, Math.min(115, safeTravel));
+      const travel = clamp(safeTravel * (.58 + Math.random() * .20), 28, maxTravel);
       endX = targetLocalX + dirX * travel;
       endY = targetLocalY + dirY * travel;
 
-      // Guarantee the centre remains inside the carpet after the failed hit.
       const nx = (endX - carpet.cx) / carpet.rx;
       const ny = (endY - carpet.cy) / carpet.ry;
       const n = Math.hypot(nx, ny);
@@ -847,24 +844,24 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
         endY = carpet.cy + (endY - carpet.cy) * k;
       }
 
-      c1x = targetLocalX + dirX * Math.min(32, travel * .34);
-      c1y = targetLocalY + dirY * Math.min(32, travel * .34);
-      c2x = targetLocalX + (endX - targetLocalX) * .76;
-      c2y = targetLocalY + (endY - targetLocalY) * .76;
-      duration = 470 + Math.random() * 100;
+      c1x = targetLocalX + dirX * Math.min(34, travel * .38);
+      c1y = targetLocalY + dirY * Math.min(34, travel * .38);
+      c2x = targetLocalX + (endX - targetLocalX) * .78;
+      c2y = targetLocalY + (endY - targetLocalY) * .78;
+      targetDuration = 450 + Math.random() * 90;
       targetSpin = ((Math.random() * 1.0) - .5) * Math.PI;
-      hopHeight = clamp(tr.height * .13, 8, 16);
+      hopHeight = clamp(tr.height * .15, 9, 17);
     } else {
-      const travel = clamp(tr.width * (.12 + Math.random() * .10), 8, 18);
+      const travel = clamp(tr.width * (.11 + Math.random() * .09), 8, 17);
       endX = targetLocalX + dirX * travel;
       endY = targetLocalY + dirY * travel;
-      c1x = targetLocalX + dirX * travel * .45;
-      c1y = targetLocalY + dirY * travel * .45;
-      c2x = targetLocalX + dirX * travel * .85;
-      c2y = targetLocalY + dirY * travel * .85;
-      duration = 390 + Math.random() * 80;
-      targetSpin = ((Math.random() * .55) - .275) * Math.PI;
-      hopHeight = clamp(tr.height * .18, 10, 20);
+      c1x = targetLocalX + dirX * travel * .52;
+      c1y = targetLocalY + dirY * travel * .52;
+      c2x = targetLocalX + dirX * travel * .88;
+      c2y = targetLocalY + dirY * travel * .88;
+      targetDuration = 360 + Math.random() * 70;
+      targetSpin = ((Math.random() * .50) - .25) * Math.PI;
+      hopHeight = clamp(tr.height * .20, 11, 21);
     }
   }
 
@@ -879,60 +876,40 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
   targetEl.style.zIndex = '80';
   targetEl.style.pointerEvents = 'none';
 
-  // The collision is front-loaded: target response starts exactly at impact.
-  const sourceDuration = 355;
-  const impactAt = .64;
-  const sourceAnim = sourceEl.animate([
-    {
-      offset: 0,
-      left: `${sourceStartLeft}px`,
-      top: `${sourceStartTop}px`,
-      transform: `translate(-50%,-50%) rotate(${baseRot}deg) scale(1)`
-    },
-    {
-      offset: .13,
-      left: `${sourceStartLeft - ux * 6}px`,
-      top: `${sourceStartTop - uy * 6}px`,
-      transform: `translate(-50%,-50%) rotate(${baseRot - (ux >= 0 ? 3 : -3)}deg) scale(1.012)`
-    },
-    {
-      offset: impactAt,
-      left: `${impactLeft}px`,
-      top: `${impactTop}px`,
-      transform: `translate(-50%,-50%) rotate(${impactRot}deg) scale(1.035)`
-    },
-    {
-      offset: .82,
-      left: `${reboundLeft}px`,
-      top: `${reboundTop - 3}px`,
-      transform: `translate(-50%,-50%) rotate(${reboundRot}deg) scale(1.018)`
-    },
-    {
-      offset: 1,
-      left: `${reboundLeft}px`,
-      top: `${reboundTop}px`,
-      transform: `translate(-50%,-50%) rotate(${reboundRot}deg) scale(1)`
-    }
-  ], {
-    duration: sourceDuration,
-    easing: 'cubic-bezier(.16,.76,.18,1)',
-    fill: 'forwards'
-  });
+  let targetMotionPromise = null;
+  let impactStarted = false;
 
-  const impactDelay = Math.round(sourceDuration * impactAt);
+  function startImpactNow() {
+    if (impactStarted) return;
+    impactStarted = true;
 
-  const targetPromise = new Promise(resolve => {
-    setTimeout(() => {
-      createImpactBurst(
-        impactX + ux * contactGap * .58,
-        impactY + uy * contactGap * .58
-      );
+    createImpactBurst(
+      impactX + ux * contactGap * .58,
+      impactY + uy * contactGap * .58
+    );
 
+    // Any chuko physically close to the first part of the target's path gets
+    // a small permanent displacement, as if the moving chuko clipped it.
+    nudgeNeighboringChuko(
+      source,
+      target,
+      targetLocalX,
+      targetLocalY,
+      endX,
+      endY,
+      dirX,
+      dirY,
+      carpet
+    );
+
+    targetMotionPromise = new Promise(resolve => {
       const startTime = performance.now();
-      function tick(now) {
-        const raw = Math.min(1, (now - startTime) / duration);
-        // Faster initial acceleration makes the target react instantly.
-        const t = 1 - Math.pow(1 - raw, 2.55);
+
+      function moveTarget(now) {
+        const raw = Math.min(1, (now - startTime) / targetDuration);
+        // Strong initial acceleration: the target moves on the same rendered
+        // frame as the visible impact, not after the striker has rebounded.
+        const t = 1 - Math.pow(1 - raw, 2.7);
         const mt = 1 - t;
 
         const x =
@@ -953,7 +930,7 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
           `translate(-50%,-50%) rotate(${targetStartRot + (targetSpin * t * 180 / Math.PI)}deg)`;
 
         if (raw < 1) {
-          requestAnimationFrame(tick);
+          requestAnimationFrame(moveTarget);
         } else {
           target.x = (endX / hostRect.width) * 100;
           target.y = (endY / hostRect.height) * 100;
@@ -967,18 +944,75 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
           resolve();
         }
       }
-      requestAnimationFrame(tick);
-    }, impactDelay);
+
+      requestAnimationFrame(moveTarget);
+    });
+  }
+
+  // One RAF loop controls the striker. Starting the target from inside this
+  // loop eliminates the old timeout-induced pause at collision.
+  const sourcePromise = new Promise(resolve => {
+    const sourceDuration = 430;
+    const impactAt = .47;
+    const startTime = performance.now();
+
+    function moveSource(now) {
+      const raw = Math.min(1, (now - startTime) / sourceDuration);
+
+      let x, y, rot, scale = 1;
+      if (raw < .12) {
+        const e = 1 - Math.pow(1 - raw / .12, 3);
+        x = sourceStartLeft - ux * 7 * e;
+        y = sourceStartTop - uy * 7 * e - Math.sin(Math.PI * e) * 1.5;
+        rot = baseRot - spinSign * 6 * e;
+        scale = 1 + .012 * e;
+      } else if (raw < impactAt) {
+        const e = 1 - Math.pow(1 - (raw - .12) / (impactAt - .12), 3);
+        const fromX = sourceStartLeft - ux * 7;
+        const fromY = sourceStartTop - uy * 7;
+        x = fromX + (impactLeft - fromX) * e;
+        y = fromY + (impactTop - fromY) * e - Math.sin(Math.PI * e) * 4;
+        rot = baseRot - spinSign * 6 + spinSign * 36 * e;
+        scale = 1.012 + .022 * e;
+
+        if (!impactStarted && raw >= impactAt - .012) startImpactNow();
+      } else if (raw < .76) {
+        if (!impactStarted) startImpactNow();
+        const e = 1 - Math.pow(1 - (raw - impactAt) / (.76 - impactAt), 2.7);
+        x = impactLeft + (reboundLeft - impactLeft) * e;
+        y = impactTop + (reboundTop - impactTop) * e - Math.sin(Math.PI * e) * reboundHop;
+        rot = impactRot + normalizeDeg(reboundRot - impactRot) * e;
+        scale = 1.034 - .015 * e + Math.sin(Math.PI * e) * .025;
+      } else {
+        const e = 1 - Math.pow(1 - (raw - .76) / .24, 3);
+        x = reboundLeft + (settleLeft - reboundLeft) * e;
+        y = reboundTop + (settleTop - reboundTop) * e - Math.sin(Math.PI * e) * 2;
+        rot = reboundRot + normalizeDeg(settleRot - reboundRot) * e;
+        scale = 1.019 - .019 * e;
+      }
+
+      sourceEl.style.left = `${x}px`;
+      sourceEl.style.top = `${y}px`;
+      sourceEl.style.transform =
+        `translate(-50%,-50%) rotate(${rot}deg) scale(${scale})`;
+
+      if (raw < 1) {
+        requestAnimationFrame(moveSource);
+      } else {
+        if (!impactStarted) startImpactNow();
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(moveSource);
   });
 
-  await Promise.all([
-    sourceAnim.finished.catch(() => {}),
-    targetPromise
-  ]);
+  await sourcePromise;
+  if (targetMotionPromise) await targetMotionPromise;
 
-  source.x = (reboundLeft / hostRect.width) * 100;
-  source.y = (reboundTop / hostRect.height) * 100;
-  source.rotation = reboundRot;
+  source.x = (settleLeft / hostRect.width) * 100;
+  source.y = (settleTop / hostRect.height) * 100;
+  source.rotation = settleRot;
   source.src = frozenSrc;
   source.pose = frozenPose;
   sourceEl.src = frozenSrc;
@@ -989,7 +1023,6 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
     `translate(-50%,-50%) rotate(${source.rotation}deg)`;
   sourceEl.style.zIndex = '';
   sourceEl.style.pointerEvents = '';
-  try { sourceAnim.cancel(); } catch {}
 
   return {
     ux: dirX,
@@ -1000,6 +1033,114 @@ async function animateChukoStrike2072(source, target, { eject = true } = {}) {
     targetEndY: endY,
     eject
   };
+}
+
+function nudgeNeighboringChuko(source, target, startX, startY, endX, endY, dirX, dirY, carpet) {
+  const travel = Math.hypot(endX - startX, endY - startY);
+  const corridorLength = Math.min(travel * .50, 105);
+  const pathEndX = startX + dirX * corridorLength;
+  const pathEndY = startY + dirY * corridorLength;
+  const pathDx = pathEndX - startX;
+  const pathDy = pathEndY - startY;
+  const pathLen2 = Math.max(1, pathDx * pathDx + pathDy * pathDy);
+
+  const candidates = [];
+
+  for (const p of state.pieces) {
+    if (
+      !p?.el ||
+      p.collected ||
+      p.type !== 'normal' ||
+      p.id === source.id ||
+      p.id === target.id
+    ) continue;
+
+    const r = p.el.getBoundingClientRect();
+    const br = host.getBoundingClientRect();
+    const cx = r.left + r.width / 2 - br.left;
+    const cy = r.top + r.height / 2 - br.top;
+
+    let u = ((cx - startX) * pathDx + (cy - startY) * pathDy) / pathLen2;
+    u = clamp(u, 0, 1);
+    const closestX = startX + pathDx * u;
+    const closestY = startY + pathDy * u;
+    const d = Math.hypot(cx - closestX, cy - closestY);
+    const hitRadius = Math.max(24, (r.width + target.el.getBoundingClientRect().width) * .30);
+
+    if (d <= hitRadius) {
+      candidates.push({ p, r, cx, cy, d, u });
+    }
+  }
+
+  candidates
+    .sort((a, b) => (a.d + a.u * 24) - (b.d + b.u * 24))
+    .slice(0, 3)
+    .forEach(({ p, r, cx, cy, d }) => {
+      const el = p.el;
+      const outwardX = d > .1 ? (cx - startX) / Math.hypot(cx - startX, cy - startY) : -dirY;
+      const outwardY = d > .1 ? (cy - startY) / Math.hypot(cx - startX, cy - startY) : dirX;
+      const strength = clamp((1 - d / Math.max(28, r.width * .75)) * 12 + 5, 4, 13);
+      let moveX = dirX * strength * .58 + outwardX * strength * .36;
+      let moveY = dirY * strength * .46 + outwardY * strength * .28;
+
+      let destX = cx + moveX;
+      let destY = cy + moveY;
+
+      // Neighbor reactions must never accidentally eject another chuko.
+      const nx = (destX - carpet.cx) / carpet.rx;
+      const ny = (destY - carpet.cy) / carpet.ry;
+      const norm = Math.hypot(nx, ny);
+      if (norm > .84) {
+        const k = .84 / norm;
+        destX = carpet.cx + (destX - carpet.cx) * k;
+        destY = carpet.cy + (destY - carpet.cy) * k;
+      }
+
+      moveX = destX - cx;
+      moveY = destY - cy;
+      const startRot = p.rotation;
+      const turn = (Math.random() - .5) * 20 + (dirX >= 0 ? 5 : -5);
+      const endRot = normalizeDeg(startRot + turn);
+      const baseTransform = `translate(-50%,-50%) rotate(${startRot}deg)`;
+
+      el.style.zIndex = '38';
+      const anim = el.animate([
+        {
+          offset: 0,
+          transform: baseTransform,
+          left: `${cx}px`,
+          top: `${cy}px`
+        },
+        {
+          offset: .46,
+          transform: `translate(-50%,-50%) rotate(${startRot + turn * .65}deg) scale(1.012)`,
+          left: `${cx + moveX * .72}px`,
+          top: `${cy + moveY * .72 - Math.max(2, strength * .20)}px`
+        },
+        {
+          offset: 1,
+          transform: `translate(-50%,-50%) rotate(${endRot}deg) scale(1)`,
+          left: `${destX}px`,
+          top: `${destY}px`
+        }
+      ], {
+        duration: 260 + Math.random() * 80,
+        easing: 'cubic-bezier(.18,.72,.22,1)',
+        fill: 'forwards'
+      });
+
+      anim.finished.catch(() => {}).then(() => {
+        const br2 = host.getBoundingClientRect();
+        p.x = (destX / br2.width) * 100;
+        p.y = (destY / br2.height) * 100;
+        p.rotation = endRot;
+        el.style.left = `${p.x}%`;
+        el.style.top = `${p.y}%`;
+        el.style.transform = `translate(-50%,-50%) rotate(${endRot}deg)`;
+        el.style.zIndex = '';
+        try { anim.cancel(); } catch {}
+      });
+    });
 }
 
 async function strikeKhan(source, khan) {
