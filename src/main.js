@@ -64,6 +64,7 @@ const physics = {
   ready: false,
   geometry: null,
   resizeTimer: 0,
+  ejectBody: null,
 };
 
 const DEFAULT_TUNING = {
@@ -813,6 +814,7 @@ function destroyPhysicsWorld() {
   physics.engine = null;
   physics.walls = [];
   physics.geometry = null;
+  physics.ejectBody = null;
   for (const piece of state.pieces) piece.body = null;
 }
 
@@ -962,8 +964,44 @@ function stepMatterWorld(now) {
   const dt = clamp(now - (physics.lastTime || now), 8, 33.333);
   physics.lastTime = now;
   M.Engine.update(physics.engine, dt);
+  enforceMatterCarpetContainment();
   syncMatterDom();
   physics.raf = requestAnimationFrame(stepMatterWorld);
+}
+
+function enforceMatterCarpetContainment() {
+  const M = getMatter();
+  const g = physics.geometry;
+  if (!M || !physics.engine || !g) return;
+
+  for (const piece of state.pieces) {
+    const body = piece?.body;
+    if (!body || body === physics.ejectBody) continue;
+
+    const nx = (body.position.x - g.cx) / Math.max(1, g.rx);
+    const ny = (body.position.y - g.cy) / Math.max(1, g.ry);
+    const norm = Math.hypot(nx, ny);
+    if (norm <= 1.015) continue;
+
+    const k = .985 / norm;
+    const px = g.cx + (body.position.x - g.cx) * k;
+    const py = g.cy + (body.position.y - g.cy) * k;
+
+    // Remove the outward component of velocity while keeping tangential motion,
+    // so the correction feels like a carpet-edge collision rather than a snap.
+    const gx = (body.position.x - g.cx) / Math.max(1, g.rx * g.rx);
+    const gy = (body.position.y - g.cy) / Math.max(1, g.ry * g.ry);
+    const gl = Math.hypot(gx, gy) || 1;
+    const ox = gx / gl;
+    const oy = gy / gl;
+    const outward = body.velocity.x * ox + body.velocity.y * oy;
+    const vx = outward > 0 ? body.velocity.x - ox * outward * 1.25 : body.velocity.x;
+    const vy = outward > 0 ? body.velocity.y - oy * outward * 1.25 : body.velocity.y;
+
+    M.Body.setPosition(body, { x: px, y: py });
+    M.Body.setVelocity(body, { x: vx * .72, y: vy * .72 });
+    M.Body.setAngularVelocity(body, body.angularVelocity * .88);
+  }
 }
 
 function syncMatterDom() {
@@ -1012,6 +1050,7 @@ function removePhysicsBody(piece) {
   const M = getMatter();
   if (!M || !physics.engine || !piece?.body) return;
   try { M.Composite.remove(physics.engine.world, piece.body); } catch {}
+  if (physics.ejectBody === piece.body) physics.ejectBody = null;
   piece.body = null;
 }
 
@@ -1054,6 +1093,8 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
     category: targetBody.collisionFilter.category,
     mask: targetBody.collisionFilter.mask
   };
+
+  physics.ejectBody = eject ? targetBody : null;
 
   sourceBody.collisionFilter.category = PHYSICS_CAT.STRIKER;
   sourceBody.collisionFilter.mask = PHYSICS_CAT.PIECE;
@@ -1140,10 +1181,16 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
         targetBody.angularVelocity + spinSign * (eject ? .14 : .075)
       );
 
-      // Striker rebound/spin is also resolved by Matter from this point.
+      // Controlled Matter rebound: the striker must stay near the impact point
+      // instead of following the winning target outside the carpet.
+      const reboundSide = spinSign * clamp(power / 85, .55, 1.05);
+      M.Body.setVelocity(sourceBody, {
+        x: -ux * 2.55 - uy * reboundSide,
+        y: -uy * 2.55 + ux * reboundSide
+      });
       M.Body.setAngularVelocity(
         sourceBody,
-        sourceBody.angularVelocity + spinSign * .22
+        sourceBody.angularVelocity + spinSign * .26
       );
 
       break;
@@ -1220,6 +1267,7 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
   M.Events.off(physics.engine, 'collisionActive', onCollision);
 
   source.flight = null;
+  if (!eject) physics.ejectBody = null;
   sourceBody.collisionFilter.category = sourceFilter.category || PHYSICS_CAT.PIECE;
   sourceBody.collisionFilter.mask = sourceFilter.mask || (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
   sourceBody.frictionAir = .055;
