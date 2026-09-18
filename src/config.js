@@ -9,9 +9,9 @@ export const CONFIG = {
 
     // Visual placement. All values are relative to the game shell.
     carpetCenterX: 0.50,
-    carpetCenterY: 0.407,
-    carpetWidth: 0.893,
-    carpetHeight: 0.311,
+    carpetCenterY: 0.408,
+    carpetWidth: 0.820,
+    carpetHeight: 0.290,
 
     // Piece pile is configured independently from the carpet.
     pileCenterX: 0.50,
