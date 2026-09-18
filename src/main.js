@@ -53,6 +53,7 @@ const drag = {
 const PHYSICS_CAT = {
   PIECE: 0x0001,
   WALL: 0x0002,
+  STRIKER: 0x0004,
 };
 
 const physics = {
@@ -978,9 +979,27 @@ function syncMatterDom() {
     piece.y = piece.body.position.y / br.height * 100;
     piece.rotation = piece.body.angle * 180 / Math.PI;
 
+    let lift = 0;
+    let scale = 1;
+    if (piece.flight) {
+      const f = piece.flight;
+      const travelled = Math.hypot(
+        piece.body.position.x - f.startX,
+        piece.body.position.y - f.startY
+      );
+      const progress = clamp(travelled / Math.max(1, f.distance), 0, 1);
+      // Land before the physical target contact so the visual chuko hits it
+      // rather than appearing to collide while still in the air.
+      const airT = clamp(progress / .84, 0, 1);
+      lift = Math.sin(Math.PI * airT) * f.maxLift;
+      scale = 1 + Math.sin(Math.PI * airT) * .085;
+    }
+
     piece.el.style.left = piece.x + '%';
     piece.el.style.top = piece.y + '%';
-    piece.el.style.transform = 'translate(-50%,-50%) rotate(' + piece.rotation + 'deg)';
+    piece.el.style.transform =
+      'translate(-50%,-50%) translateY(' + (-lift) + 'px) rotate(' +
+      piece.rotation + 'deg) scale(' + scale + ')';
   }
 }
 
@@ -1024,12 +1043,25 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
   M.Sleeping.set(targetBody, false);
   if (isKhan && targetBody.isStatic) M.Body.setStatic(targetBody, false);
 
-  sourceBody.collisionFilter.mask = PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL;
-  targetBody.collisionFilter.mask = eject
-    ? PHYSICS_CAT.PIECE
-    : (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
+  // The striker is "airborne": it passes over every non-target chuko on the
+  // route. Only the chosen target accepts the STRIKER category. At impact we
+  // restore ordinary PIECE collisions, so the rebound can move neighbours.
+  const sourceFilter = {
+    category: sourceBody.collisionFilter.category,
+    mask: sourceBody.collisionFilter.mask
+  };
+  const targetFilter = {
+    category: targetBody.collisionFilter.category,
+    mask: targetBody.collisionFilter.mask
+  };
 
-  sourceBody.frictionAir = .038;
+  sourceBody.collisionFilter.category = PHYSICS_CAT.STRIKER;
+  sourceBody.collisionFilter.mask = PHYSICS_CAT.PIECE;
+  targetBody.collisionFilter.mask =
+    (eject ? PHYSICS_CAT.PIECE : (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL)) |
+    PHYSICS_CAT.STRIKER;
+
+  sourceBody.frictionAir = .026;
   targetBody.frictionAir = eject ? .016 : (isKhan ? .045 : .058);
 
   M.Body.setVelocity(sourceBody, { x: 0, y: 0 });
@@ -1042,6 +1074,13 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
   const uy = dy / dist;
   const spinSign = ux >= 0 ? 1 : -1;
   const speed = clamp(10.8 + power * .052, 11.8, 17.2);
+
+  source.flight = {
+    startX: sourceBody.position.x,
+    startY: sourceBody.position.y,
+    distance: dist,
+    maxLift: clamp(host.getBoundingClientRect().width * .075, 34, 62)
+  };
 
   let collided = false;
   let finished = false;
@@ -1061,6 +1100,16 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
       if (!hit) continue;
 
       collided = true;
+
+      sourceBody.collisionFilter.category = PHYSICS_CAT.PIECE;
+      sourceBody.collisionFilter.mask = PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL;
+      targetBody.collisionFilter.category = PHYSICS_CAT.PIECE;
+      targetBody.collisionFilter.mask = eject
+        ? PHYSICS_CAT.PIECE
+        : (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
+      source.flight = null;
+      syncMatterDom();
+
       const support = pair.collision?.supports?.[0];
       impactPoint = support
         ? { x: support.x, y: support.y }
@@ -1152,9 +1201,14 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
   M.Events.off(physics.engine, 'collisionStart', onCollision);
   M.Events.off(physics.engine, 'collisionActive', onCollision);
 
+  source.flight = null;
+  sourceBody.collisionFilter.category = sourceFilter.category || PHYSICS_CAT.PIECE;
+  sourceBody.collisionFilter.mask = sourceFilter.mask || (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
   sourceBody.frictionAir = .055;
+
   if (target.body) {
-    targetBody.collisionFilter.mask = PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL;
+    targetBody.collisionFilter.category = targetFilter.category || PHYSICS_CAT.PIECE;
+    targetBody.collisionFilter.mask = targetFilter.mask || (PHYSICS_CAT.PIECE | PHYSICS_CAT.WALL);
     if (!isKhan) targetBody.frictionAir = .055;
   }
 
