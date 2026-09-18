@@ -1,9 +1,9 @@
 /* UPAY 2D v0.1.32-alpha — separate scene layers */
 .shell{
   --scene-carpet-x:50%;
-  --scene-carpet-y:40.7%;
-  --scene-carpet-w:89.3%;
-  --scene-carpet-h:31.1%;
+  --scene-carpet-y:40.8%;
+  --scene-carpet-w:82%;
+  --scene-carpet-h:29%;
 }
 
 .bg-layer{
