@@ -7,7 +7,7 @@
 }
 
 .bg-layer{
-  background-image:url('../assets/ref/upay_background_ground.webp?v=0132') !important;
+  background-image:url('../assets/ref/Fon_Upay1.webp?v=0132') !important;
   background-repeat:no-repeat !important;
   background-size:100% 100% !important;
   background-position:center top !important;
@@ -21,7 +21,7 @@
   width:var(--scene-carpet-w);
   height:var(--scene-carpet-h);
   transform:translate(-50%,-50%);
-  background-image:url('../assets/ref/upay_carpet_blue.webp?v=0132');
+  background-image:url('../assets/ref/Carpet_Blue.webp?v=0132');
   background-repeat:no-repeat;
   background-position:center center;
   background-size:100% 100%;
