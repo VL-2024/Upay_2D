@@ -133,6 +133,8 @@ function injectStyles() {
 
     .main-btn{font-size:34px!important;letter-spacing:-.025em}
     .slot img{filter:drop-shadow(0 3px 2px rgba(0,0,0,.18))!important}
+    .scenario-debug-badge{position:absolute;left:50%;top:63.1%;z-index:14;transform:translateX(-50%);padding:5px 11px;border-radius:12px;background:rgba(5,31,54,.88);border:1px solid rgba(255,255,255,.28);box-shadow:0 4px 12px rgba(0,0,0,.20);color:#fff;font-size:10px;font-weight:900;letter-spacing:.035em;white-space:nowrap;pointer-events:none}
+    @media(max-width:700px){.scenario-debug-badge{top:63.4%;font-size:9px;padding:4px 9px}}
 
     @media(max-width:700px){
       .game-piece.normal{width:var(--chuko-size,15.2%)}.game-piece.khan{width:var(--khan-size,16.7%)}
@@ -150,6 +152,7 @@ function setupUI() {
   buildPoseGuide();
   buildPullGuide();
   buildTuningPanel();
+  buildScenarioDebugBadge();
   applyTuning();
   renderStakeMenu();
   syncStakeUI();
@@ -172,6 +175,11 @@ function setupUI() {
   document.getElementById('newGameBtn').addEventListener('click', () => {
     if (state.phase === 'settled') startNewGame();
     else flashObjective('Выбери чуко-биту, оттяни назад и отпусти');
+  });
+  document.getElementById('demoToggle').addEventListener('change', () => {
+    state.demoHasStarted = false;
+    scenario.demoIndex = 0;
+    if (state.phase !== 'animating') startNewGame();
   });
   document.addEventListener('pointermove', onPointerMove, { passive: false });
   document.addEventListener('pointerup', onPointerUp, { passive: false });
@@ -216,6 +224,15 @@ function buildPoseGuide() {
     refreshPieceVisuals();
   }));
   state.poseGuide = { panel, open };
+}
+
+function buildScenarioDebugBadge() {
+  const badge = document.createElement('div');
+  badge.id = 'scenarioDebugBadge';
+  badge.className = 'scenario-debug-badge';
+  badge.textContent = 'СЦЕНАРИЙ --/--';
+  shell.appendChild(badge);
+  state.scenarioDebugBadge = badge;
 }
 
 function buildPullGuide() {
@@ -384,7 +401,8 @@ function startNewGame() {
   const demoMode = document.getElementById('demoToggle').checked;
   if (state.externalScenarioCode) scenario.setScenario(state.externalScenarioCode);
   else if (demoMode) {
-    scenario.reset({ advanceDemo: state.demoHasStarted });
+    const advanceDemo = state.demoHasStarted === true;
+    scenario.reset({ advanceDemo });
     state.demoHasStarted = true;
   } else {
     state.demoHasStarted = false;
@@ -400,6 +418,7 @@ function startNewGame() {
   syncSelectorLock();
   updateActionButton();
   updateGuideButtons();
+  updateScenarioDebugBadge();
 }
 
 function shuffled(arr) {
@@ -2024,7 +2043,25 @@ function updateSlotDom(index, piece) { const slot = document.querySelector(`.slo
 function updateProgress() { const c1 = state.slots.slice(0, 3).filter(Boolean).length, c2 = state.slots.slice(3, 6).filter(Boolean).length; document.getElementById('zone1Progress').textContent = `${c1}/3`; document.getElementById('zone2Progress').textContent = `${c2}/3`; document.getElementById('upayZone1').classList.toggle('complete', c1 === 3); document.getElementById('upayZone2').classList.toggle('complete', c2 === 3); }
 
 function scenarioLabel(code) { return String(code || '').replaceAll('_', ' + '); }
-function setObjective(text) { state.lastObjective = text; document.getElementById('objective').textContent = text; }
+function updateScenarioDebugBadge() {
+  const el = state.scenarioDebugBadge;
+  if (!el) return;
+  const s = scenario.snapshot();
+  const demoMode = document.getElementById('demoToggle')?.checked;
+  const plan = Array.isArray(s.demoPlan) ? s.demoPlan : [];
+  const first = plan.slice(0, 3).join('-');
+  const second = plan.length > 3 ? plan.slice(3, 6).join('-') : '';
+  const suffix = second ? ` • ${first} | ${second}` : (first ? ` • ${first}` : '');
+  el.textContent = demoMode
+    ? `DEMO • СЦЕНАРИЙ ${String(s.demoNumber).padStart(2,'0')}/${s.demoCount}${suffix}`
+    : `СЦЕНАРИЙ: ${s.scenario}`;
+}
+
+function setObjective(text) {
+  state.lastObjective = text;
+  document.getElementById('objective').textContent = text;
+  updateScenarioDebugBadge();
+}
 function setObjectiveFromScenario() {
   const s = scenario.snapshot();
   const demo = document.getElementById('demoToggle').checked ? 'DEMO • ' : '';
@@ -2070,6 +2107,7 @@ window.UPAY2D = {
     return scenario.snapshot();
   },
   getScenario() { return scenario.snapshot(); },
+  getDemoSequence() { return scenario.getDemoSequence(); },
   getTuning() { return { ...tuning }; },
   setTuning(partial = {}) {
     Object.keys(DEFAULT_TUNING).forEach(key => {

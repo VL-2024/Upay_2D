@@ -67,9 +67,14 @@ export class ScenarioEngine {
 
   reset({ advanceDemo = false } = {}) {
     if (advanceDemo) this.demoIndex = (this.demoIndex + 1) % this.order.length;
+    if (this.demoIndex < 0 || this.demoIndex >= this.order.length) this.demoIndex = 0;
     this.current = this.order[this.demoIndex];
     this._resetState();
     return this.snapshot();
+  }
+
+  getDemoSequence() {
+    return [...this.order];
   }
 
   setScenario(code) {
@@ -194,6 +199,10 @@ export class ScenarioEngine {
 
     return {
       scenario: this.current,
+      demoIndex: Math.max(0, this.order.indexOf(this.current)),
+      demoNumber: Math.max(0, this.order.indexOf(this.current)) + 1,
+      demoCount: this.order.length,
+      demoPlan: [...this.plan],
       collected: this.collected,
       normalThrows: this.normalThrows,
       stage: this.stage,
