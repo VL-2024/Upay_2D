@@ -449,6 +449,10 @@ function buildPieces() {
     collected: false,
     el: null,
   });
+
+  // Final positions are calculated before the player sees the scatter.
+  // Matter resolves any intersections now, while the pieces are still invisible.
+  preSolveInitialLayout();
 }
 
 
@@ -638,7 +642,7 @@ function animateScatterIn(piece, index) {
   const spin = piece.rotation + (Math.random() - .5) * 70;
   el.animate([
     { opacity: 0, transform: `translate(-50%,-50%) translate(${piece.spawnDx}px,${piece.spawnDy}px) rotate(${spin}deg) scale(.3)` },
-    { opacity: 1, offset: .76, transform: `translate(-50%,-50%) translate(5px,-8px) rotate(${piece.rotation + 6}deg) scale(1.03)` },
+    { opacity: 1, offset: .84, transform: `translate(-50%,-50%) rotate(${piece.rotation}deg) scale(1.015)` },
     { opacity: 1, transform: base },
   ], { duration: 500 + Math.random() * 170, delay: index * 16, easing: 'cubic-bezier(.18,.78,.2,1)', fill: 'both' });
 }
@@ -1025,6 +1029,8 @@ function initPhysicsWorld() {
     body.plugin.upayPieceId = piece.id;
     piece.body = body;
     M.Composite.add(engine.world, body);
+
+    if (piece.type !== 'khan') M.Sleeping.set(body, true);
   }
 
   // Initial positions were already solved before the scatter animation.
@@ -1181,7 +1187,7 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
     PHYSICS_CAT.STRIKER;
 
   sourceBody.frictionAir = .026;
-  targetBody.frictionAir = eject ? .010 : (isKhan ? .045 : .058);
+  targetBody.frictionAir = eject ? .006 : (isKhan ? .045 : .058);
 
   M.Body.setVelocity(sourceBody, { x: 0, y: 0 });
   M.Body.setAngularVelocity(sourceBody, 0);
@@ -1246,17 +1252,23 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
       M.Sleeping.set(targetBody, false);
 
       const targetKick = eject
-        ? clamp(5.8 + power * .030, 6.4, 8.8)
+        ? clamp(7.4 + power * .036, 8.0, 11.4)
         : clamp(1.8 + power * .010, 2.1, 3.1);
 
+      if (eject) {
+        // Guarantee visible motion immediately at impact instead of allowing
+        // a dense contact cluster to hold the target for several frames.
+        M.Body.translate(targetBody, { x: ux * 5.5, y: uy * 5.5 });
+      }
+
       M.Body.setVelocity(targetBody, {
-        x: targetBody.velocity.x + ux * targetKick,
-        y: targetBody.velocity.y + uy * targetKick
+        x: ux * targetKick,
+        y: uy * targetKick
       });
 
       M.Body.setAngularVelocity(
         targetBody,
-        targetBody.angularVelocity + spinSign * (eject ? .14 : .075)
+        targetBody.angularVelocity + spinSign * (eject ? .16 : .075)
       );
 
       // Controlled Matter rebound: the striker must stay near the impact point
@@ -1306,15 +1318,15 @@ async function runMatterStrike(source, target, { eject = false, power = 70, isKh
         // In a dense cluster a real collision can spend too much energy on
         // neighbours. Add one small physical impulse so a winning piece still
         // completes the prescribed lottery outcome.
-        if (!assisted && elapsed > 260 && matterCarpetNorm(targetBody.position) < .97) {
+        if (!assisted && elapsed > 110 && matterCarpetNorm(targetBody.position) < .97 && targetBody.speed < 4.2) {
           assisted = true;
           M.Body.setVelocity(targetBody, {
-            x: targetBody.velocity.x + ux * 3.0,
-            y: targetBody.velocity.y + uy * 3.0
+            x: ux * 7.0,
+            y: uy * 7.0
           });
           M.Body.setAngularVelocity(
             targetBody,
-            targetBody.angularVelocity + spinSign * .08
+            targetBody.angularVelocity + spinSign * .07
           );
         }
       }
